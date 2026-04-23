@@ -1,0 +1,203 @@
+" ============================================================================
+"            
+"            ██╗   ██╗██╗███╗   ███╗██████╗  ██████╗
+"            ██║   ██║██║████╗ ████║██╔══██╗██╔════╝
+"            ██║   ██║██║██╔████╔██║██████╔╝██║
+"            ╚██╗ ██╔╝██║██║╚██╔╝██║██╔══██╗██║
+"             ╚████╔╝ ██║██║ ╚═╝ ██║██║  ██║╚██████╗
+"              ╚═══╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝
+"  
+"  File name   : vimrc 
+"  Author      : Abdul Sattar <abdul.linuxdev@gmail.com>
+"  Created On  : February 2025
+"  Repository  : https://github.com/A4sa/vimrc-Embedded.git
+"  Description : A professional and optimized Vim configuration tailored for
+"                embedded systems development.
+"
+" ============================================================================
+
+"Source other configuration files
+source $HOME/.vim/plugin_config.vim             " Plugin for vim
+source $HOME/.vim/key_mapping.vim        " Key mapping for vim   
+
+
+" ========================================================================
+"   [1] Core VIM Behavior
+" ========================================================================
+set nocompatible                    " Not compatible with Acient vim
+filetype on                         " Enable filetype detection
+filetype indent on                  " Enable filetype-specific indenting
+filetype plugin on                  " Enable filetype-specific plugins
+syntax enable                       " Enable syntax highlighting
+
+"========================================================================
+"  [2]  File and Buffer Management
+"========================================================================  
+set hidden                          " Allow buffer switching without saving
+set confirm                         " Ask for confirmation when :q 
+set nobackup                        " Nobackup the file
+set nowritebackup
+set noswapfile                      " not create .swap file
+
+"======================================================================
+"  [3]  User Interface (UI) Settings
+"======================================================================  
+set number                          " Show line numbers in the gutter
+set relativenumber                  " Show relative line numbers
+"set cursorline                      " Highlight the current line
+set scrolloff=8                     " Keep 8 lines visible above/below cursor
+set sidescrolloff=8                 " Keep 8 columns visible on the sides
+set ruler                           " Show the cursor position
+set showcmd                         " Show incomplete commands
+set showmode                        " Show current mode
+set showmatch                       " Highlight matching brackets
+set laststatus=2                    " Always show status line (0=never, 1=only with splits, 2=alway)
+set title                           " Show filename in terminal barr
+set cmdheight=2                     " Give more space for displaying messages
+set encoding=UTF-8                  " Use UTF-8 encoding
+set background=dark                 " Use 'light' & 'dark'
+"set colorcolumn=80                 " Highlight column 80
+
+" =====================================================================
+"  [4]  Colors and Terminal Compatibility 
+" ===================================================================== 
+set t_Co=256                        " Force 256 colors for terminal compatibility
+
+
+"colorscheme desert                 " Restore syntax
+"         colorscheme desert      (built-in, no plugin)
+"         colorscheme gruvbox     (warm, low-fatigue for long sessions)
+"         colorscheme tokyonight  (high contrast, good for DTS/C
+         
+set clipboard=unnamedplus           " Clipboard btw editor
+
+" ====================================================================
+"  [5]  Tab and Indentation Setting
+" ==================================================================== 
+set tabstop=4                   " Number of spaces that a <Tab> in the file counts for
+set softtabstop=4               " Number of spaces to use for each step of (auto)indent
+set shiftwidth=4                " Number of spaces to use for autoindent
+set expandtab                   " Use spaces instead of tabs
+set smartindent                 " Auto-indent
+set autoindent                  " Automatically indents new lines (loop, funcation)
+set cindent                     " Enable C-style indentation
+set textwidth=80                " Wrap text to the next line at 80 characters
+
+" ===================================================================
+"  [6]  Search Settings
+" =================================================================== 
+set ignorecase                  " Ignore case when searching
+set smartcase                   " Override ignorecase if search contains uppercase letters
+set incsearch                   " Show search results as you type
+set hlsearch                    " Highlight all search results
+
+" ===================================================================
+"  [7]  Command Line Setting ---> :e
+" ===================================================================
+set wildmenu                          " Enable graphical tab-completion memu
+set wildmode=longest:full,full        " Enable tab completion menu
+set wildignore=*.o,*.obj,*.ko,*.d,*.dtb,*.swp,*.bak,*.pyc,*.class
+"   longest:full — first Tab completes to the longest common string
+"                  and opens the menu simultaneously.
+"   full         — subsequent Tabs cycle through all matches in the menu
+
+" ==================================================================
+"  [8]  Code Folding Setting
+" ================================================================== 
+set foldenable               " Enable folding
+set foldlevelstart=99        " Start with all folds open
+" TIP:  Useful fold commands:
+"         za  — toggle the fold under cursor
+"         zM  — close all folds in the file
+"         zR  — open all folds in the file
+"         zo  — open fold under cursor
+"         zc  — close fold under cursor
+
+" ================================================================
+"  [9]  Auto-Completion  -----> Ctrl + N/P
+" ================================================================
+set completeopt=menu,menuone,noselect,noinsert
+set shortmess+=c
+"   menu     — show the popup menu when there are multiple matches
+"   menuone  — show the popup even when there is only one match
+"              (so you can see what's being completed)
+"   noselect — don't pre-select any entry; you choose manually
+"   noinsert — don't insert anything until you actively select an entry
+
+" ==============================================================
+"  [10] Splits and Windows Setting
+" ==============================================================
+set splitright                      " Open vertical splits to the right
+set splitbelow                      " Open horizontal splits below
+set backspace=indent,eol,start      " Improve backspace behavior
+
+" =============================================================
+"  [11]  Performance Tuning
+" =============================================================
+set timeoutlen=500                  " Faster key sequence timeout
+set updatetime=300                  " Faster update time for plugins
+
+" =============================================================
+"  [12]  CScope Integration 
+" ctags tells you WHERE a symbol is defined.
+" cscope tells you everything about a symbol:
+"   - where it is defined
+"   - where it is called from
+"   - where it is assigned
+"   - which files include a given header
+"   - which functions call a given function
+" =============================================================
+if has('cscope')
+  set cscopetag " Use cscope tags
+  set csprg=/usr/bin/cscope
+  set csto=0  " Search cscope databases in this order:
+  set cst
+  set nocsverb
+
+  if filereadable("cscope.out")
+    cs add cscope.out
+  elseif $CSCOPE_DB != ""
+    " Also respect the CSCOPE_DB environment variable if set in your shell.
+    cs add $CSCOPE_DB
+  endif
+
+endif
+  
+" ==============================================================
+"  [13]  FileType Specific Rules
+" ==============================================================
+
+" ---- C / C++ ---
+autocmd FileType c setlocal tabstop=4 shiftwidth=4 expandtab
+autocmd BufRead,BufNewFile ~/kernel/*.[ch] setlocal tabstop=8 shiftwidth=8 noexpandtab
+autocmd BufRead,BufNewFile *.ino set filetype=cpp
+
+autocmd BufRead,BufNewFile *.c setlocal commentstring=/*\ %s\ */
+autocmd BufRead,BufNewFile *.h setlocal commentstring=/*\ %s\ */
+
+if executable('clang-format')
+  autocmd BufWritePre *.c,*.h :silent! FormatWrite
+endif
+
+" ---- Python ----
+autocmd FileType python setlocal tabstop=4 shiftwidth=4 expandtab
+
+" -- Makefiles ---
+autocmd FileType make setlocal tabstop=4 shiftwidth=4 noexpandtab
+
+" --- Kconfig -----
+autocmd BufRead,BufNewFile Kconfig*,*/Kconfig setfiletype kconfig
+autocmd FileType kconfig setlocal tabstop=1 shiftwidth=1 noexpandtab
+
+" --- Device Tree ---
+autocmd BufRead,BufNewFile *.dts,*.dtsi setfiletype dts
+autocmd FileType dts setlocal tabstop=4 shiftwidth=4 noexpandtab
+autocmd BufRead,BufNewFile *.dts,*.dtsi setlocal commentstring=/*\ %s\ */
+
+" --- Markdown -----
+autocmd BufRead,BufNewFile *.md set filetype=markdown
+autocmd FileType markdown setlocal spell wrap linebreak
+
+" --- Arduino ---
+autocmd BufRead,BufNewFile *.ino setfiletype cpp
+
