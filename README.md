@@ -1,15 +1,14 @@
-<div align="center">
 
 ```
-██████╗  ██████╗ ████████╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗
-██╔══██╗██╔═══██╗╚══██╔══╝██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝
-██║  ██║██║   ██║   ██║   █████╗  ██║   ██║██████╔╝██║  ███╗█████╗
-██║  ██║██║   ██║   ██║   ██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝
-██████╔╝╚██████╔╝   ██║   ██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗
-╚═════╝  ╚═════╝    ╚═╝   ╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝
+    ██████╗  ██████╗ ████████╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗
+    ██╔══██╗██╔═══██╗╚══██╔══╝██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝
+    ██║  ██║██║   ██║   ██║   █████╗  ██║   ██║██████╔╝██║  ███╗█████╗
+    ██║  ██║██║   ██║   ██║   ██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝
+    ██████╔╝╚██████╔╝   ██║   ██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗
+    ╚═════╝  ╚═════╝    ╚═╝   ╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝
 ```
 
-**A professional, annotated developer workspace for anyone who works on Linux.**  
+**A professional, annotated developer workspace for anyone who works on Linux.**
 Vim · tmux · Shell · Snippets · Docker — everything configured, everything explained.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -18,8 +17,6 @@ Vim · tmux · Shell · Snippets · Docker — everything configured, everything
 [![Editor](https://img.shields.io/badge/Editor-Vim-019733.svg)]()
 
 </div>
-
----
 
 ## Why dotforge?
 
