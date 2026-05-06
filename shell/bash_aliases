@@ -178,4 +178,13 @@ alias qnn='cd ~/Android/qairt/2.34.0.250424/'
 alias venv='source bin/venv/bin/activate'
 alias snpe='source bin/envsetup.sh'
 
+# Android SDK and NDK
+export ANDROID_HOME="/home/ev/Android/Sdk"
+export ANDROID_SDK_ROOT="/home/ev/Android/Sdk"
+export ANDROID_NDK_ROOT="/home/ev/Android/android-ndk-r26c/"
+export ANDROID_NDK_HOME="/home/ev/Android/android-ndk-r26c/"
+export PATH=$PATH:$ANDROID_NDK_ROOT
+
+# Local user bin
+export PATH=$HOME/.local/bin:$PATH
 
