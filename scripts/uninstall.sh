@@ -2,8 +2,8 @@
 # ============================================================================
 #  File name   : uninstall.sh
 #  Author      : Abdul Sattar <abdul.linuxdev@gmail.com>
-#  Repository  : https://github.com/A4sa/dotforge.git
-#  Description : Remove all files installed by dotforge and restore backups
+#  Repository  : https://github.com/A4sa/Dotforge.git
+#  Description : Remove all files installed by Dotforge and restore backups
 #                if they exist.
 #
 #  USAGE
@@ -23,12 +23,12 @@
 #    ~/.tmux.conf
 #    ~/.bash_aliases
 #    ~/.bash_functions
-#    dotforge loader block from ~/.bashrc
+#    Dotforge loader block from ~/.bashrc
 #
 #  WHAT THIS SCRIPT DOES NOT REMOVE
 #  ---------------------------------
 #    ~/.bash_local            (your private machine config — never touched)
-#    The dotforge repo itself (just rm -rf dotforge/ manually if needed)
+#    The Dotforge repo itself (just rm -rf Dotforge/ manually if needed)
 #    System packages (vim, tmux, fzf etc — installed separately)
 #
 # ============================================================================
@@ -38,26 +38,26 @@ set -euo pipefail
 RESET='\033[0m'; BOLD='\033[1m'
 GREEN='\033[0;32m'; YELLOW='\033[0;33m'; CYAN='\033[0;36m'; RED='\033[0;31m'
 
-info()    { echo -e "${CYAN}[dotforge]${RESET} $*"; }
-success() { echo -e "${GREEN}[dotforge]${RESET} $*"; }
-warn()    { echo -e "${YELLOW}[dotforge]${RESET} $*"; }
-error()   { echo -e "${RED}[dotforge] ERROR:${RESET} $*" >&2; exit 1; }
+info()    { echo -e "${CYAN}[Dotforge]${RESET} $*"; }
+success() { echo -e "${GREEN}[Dotforge]${RESET} $*"; }
+warn()    { echo -e "${YELLOW}[Dotforge]${RESET} $*"; }
+error()   { echo -e "${RED}[Dotforge] ERROR:${RESET} $*" >&2; exit 1; }
 step()    { echo -e "\n${BOLD}── $* ──────────────────────────────────────${RESET}"; }
 
-BACKUP_BASE="$HOME/.dotforge_backup"
+BACKUP_BASE="$HOME/.Dotforge_backup"
 DEST_BASHRC="$HOME/.bashrc"
 
 
 # ── Confirmation ──────────────────────────────────────────────────────────────
 
 echo ""
-echo -e "${BOLD}dotforge — Uninstaller${RESET}"
+echo -e "${BOLD}Dotforge — Uninstaller${RESET}"
 echo -e "───────────────────────"
 echo ""
-warn "This will remove all dotforge config files from your home directory."
+warn "This will remove all Dotforge config files from your home directory."
 warn "Your ~/.bash_local will NOT be touched."
 echo ""
-read -rp "Are you sure you want to uninstall dotforge? [y/N] " confirm
+read -rp "Are you sure you want to uninstall Dotforge? [y/N] " confirm
 [[ "$confirm" =~ ^[Yy]$ ]] || { info "Uninstall cancelled."; exit 0; }
 echo ""
 
@@ -102,18 +102,18 @@ remove_file "$HOME/.bash_aliases"
 remove_file "$HOME/.bash_functions"
 
 
-# ── Step 4: Remove dotforge block from ~/.bashrc ──────────────────────────────
+# ── Step 4: Remove Dotforge block from ~/.bashrc ──────────────────────────────
 
 step "Cleaning ~/.bashrc"
 
-if grep -qF "# dotforge" "$DEST_BASHRC" 2>/dev/null; then
-    # Remove the dotforge block — from the marker line to the fi line after it
-    sed -i '/# dotforge/,/^fi$/d' "$DEST_BASHRC"
+if grep -qF "# Dotforge" "$DEST_BASHRC" 2>/dev/null; then
+    # Remove the Dotforge block — from the marker line to the fi line after it
+    sed -i '/# Dotforge/,/^fi$/d' "$DEST_BASHRC"
     # Also remove any blank line left behind just before the block
     sed -i '/^$/N;/^\n$/d' "$DEST_BASHRC"
-    success "dotforge loader removed from ~/.bashrc"
+    success "Dotforge loader removed from ~/.bashrc"
 else
-    info "No dotforge block found in ~/.bashrc — skipping."
+    info "No Dotforge block found in ~/.bashrc — skipping."
 fi
 
 
@@ -149,7 +149,7 @@ fi
 
 echo ""
 echo -e "${GREEN}${BOLD}============================================${RESET}"
-echo -e "${GREEN}${BOLD}  dotforge uninstalled successfully        ${RESET}"
+echo -e "${GREEN}${BOLD}  Dotforge uninstalled successfully        ${RESET}"
 echo -e "${GREEN}${BOLD}============================================${RESET}"
 echo ""
 echo "  Removed: Vim config, tmux config, shell aliases and functions"

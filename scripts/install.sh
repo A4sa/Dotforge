@@ -2,8 +2,8 @@
 # ============================================================================
 #  File name   : install.sh
 #  Author      : Abdul Sattar <abdul.linuxdev@gmail.com>
-#  Repository  : https://github.com/A4sa/dotforge.git
-#  Description : Install the dotforge developer workspace on a Linux machine.
+#  Repository  : https://github.com/A4saDotforge.git
+#  Description : Install the Dotforge developer workspace on a Linux machine.
 #                Copies config files, creates required directories, installs
 #                vim-plug, and optionally installs missing dependencies.
 #
@@ -19,7 +19,7 @@
 #    3. Copy vim configs  → ~/.vimrc, ~/.vim/
 #    4. Copy tmux config  → ~/.tmux.conf
 #    5. Copy shell config → ~/.bash_aliases, ~/.bash_functions
-#    6. Append dotforge loader to ~/.bashrc
+#    6. Append Dotforge loader to ~/.bashrc
 #    7. Create required directories (~/.vim/undodir, ~/.vim/UltiSnips)
 #    8. Install vim-plug
 #    9. Install Vim plugins headlessly
@@ -28,7 +28,7 @@
 #  COPY vs SYMLINK
 #  ---------------
 #    Files are COPIED, not symlinked.
-#    After install, your ~/.vimrc is independent from the dotforge repo.
+#    After install, your ~/.vimrc is independent from the Dotforge repo.
 #    To get updates from the repo, run: ./scripts/update.sh
 #
 # ============================================================================
@@ -44,24 +44,24 @@ YELLOW='\033[0;33m'
 CYAN='\033[0;36m'
 RED='\033[0;31m'
 
-info()    { echo -e "${CYAN}[dotforge]${RESET} $*"; }
-success() { echo -e "${GREEN}[dotforge]${RESET} $*"; }
-warn()    { echo -e "${YELLOW}[dotforge]${RESET} $*"; }
-error()   { echo -e "${RED}[dotforge] ERROR:${RESET} $*" >&2; exit 1; }
+info()    { echo -e "${CYAN}[Dotforge]${RESET} $*"; }
+success() { echo -e "${GREEN}[Dotforge]${RESET} $*"; }
+warn()    { echo -e "${YELLOW}[Dotforge]${RESET} $*"; }
+error()   { echo -e "${RED}[Dotforge] ERROR:${RESET} $*" >&2; exit 1; }
 step()    { echo -e "\n${BOLD}── $* ──────────────────────────────────────${RESET}"; }
-ask()     { echo -e "${YELLOW}[dotforge]${RESET} $*"; }
+ask()     { echo -e "${YELLOW}[Dotforge]${RESET} $*"; }
 
 
 # ── Resolve paths ─────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOTFORGE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BACKUP_DIR="$HOME/.dotforge_backup/$(date +%Y-%m-%d_%H-%M-%S)"
+Dotforge_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+BACKUP_DIR="$HOME/.Dotforge_backup/$(date +%Y-%m-%d_%H-%M-%S)"
 
 # Source locations (inside the repo)
-VIM_DIR="$DOTFORGE_ROOT/vim"
-SHELL_DIR="$DOTFORGE_ROOT/shell"
-TMUX_DIR="$DOTFORGE_ROOT/tmux"
+VIM_DIR="$Dotforge_ROOT/vim"
+SHELL_DIR="$Dotforge_ROOT/shell"
+TMUX_DIR="$Dotforge_ROOT/tmux"
 
 # Destination locations (on the machine)
 DEST_VIMRC="$HOME/.vimrc"
@@ -74,7 +74,7 @@ DEST_BASHRC="$HOME/.bashrc"
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 
-# Tools required by dotforge and the plugins it configures
+# Tools required by Dotforge and the plugins it configures
 DEPS=(
     "vim-gtk3:vim"            # Vim with +clipboard and +python3 (UltiSnips)
     "tmux:tmux"               # Terminal multiplexer
@@ -260,12 +260,12 @@ install_shell() {
 install_bashrc_append() {
     step "Configuring ~/.bashrc"
 
-    local marker="# dotforge"
-    local loader="source \"\$HOME/dotforge/shell/bashrc_append\""
+    local marker="# Dotforge"
+    local loader="source \"\$HOMEDotforge/shell/bashrc_append\""
 
     # Check if already added
     if grep -qF "$marker" "$DEST_BASHRC" 2>/dev/null; then
-        info "dotforge already present in ~/.bashrc — skipping."
+        info "Dotforge already present in ~/.bashrc — skipping."
         return
     fi
 
@@ -278,7 +278,7 @@ if [ -f "${SHELL_DIR}/bashrc_append" ]; then
 fi
 EOF
 
-    success "dotforge loader appended to ~/.bashrc"
+    success "Dotforge loader appended to ~/.bashrc"
     info "Run 'source ~/.bashrc' to activate in this session."
 }
 
@@ -323,7 +323,7 @@ EOF
 print_summary() {
     echo ""
     echo -e "${GREEN}${BOLD}============================================${RESET}"
-    echo -e "${GREEN}${BOLD}  dotforge installed successfully          ${RESET}"
+    echo -e "${GREEN}${BOLD}  Dotforge installed successfully          ${RESET}"
     echo -e "${GREEN}${BOLD}============================================${RESET}"
     echo ""
     echo -e "  ${BOLD}Installed:${RESET}"
@@ -361,9 +361,9 @@ print_summary() {
 
 main() {
     echo ""
-    echo -e "${BOLD}dotforge — Developer Workspace Installer${RESET}"
+    echo -e "${BOLD}Dotforge — Developer Workspace Installer${RESET}"
     echo -e "──────────────────────────────────────────"
-    echo -e "  Repo   : $DOTFORGE_ROOT"
+    echo -e "  Repo   : $Dotforge_ROOT"
     echo -e "  User   : $USER"
     echo -e "  Home   : $HOME"
     echo ""

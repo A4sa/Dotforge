@@ -2,8 +2,8 @@
 # ============================================================================
 #  File name   : update.sh
 #  Author      : Abdul Sattar <abdul.linuxdev@gmail.com>
-#  Repository  : https://github.com/A4sa/dotforge.git
-#  Description : Pull the latest dotforge changes and re-copy config files.
+#  Repository  : https://github.com/A4sa/Dotforge.git
+#  Description : Pull the latest Dotforge changes and re-copy config files.
 #                Backs up existing configs before overwriting.
 #
 #  USAGE
@@ -17,33 +17,33 @@ set -euo pipefail
 RESET='\033[0m'; BOLD='\033[1m'
 GREEN='\033[0;32m'; YELLOW='\033[0;33m'; CYAN='\033[0;36m'; RED='\033[0;31m'
 
-info()    { echo -e "${CYAN}[dotforge]${RESET} $*"; }
-success() { echo -e "${GREEN}[dotforge]${RESET} $*"; }
-warn()    { echo -e "${YELLOW}[dotforge]${RESET} $*"; }
-error()   { echo -e "${RED}[dotforge] ERROR:${RESET} $*" >&2; exit 1; }
+info()    { echo -e "${CYAN}[Dotforge]${RESET} $*"; }
+success() { echo -e "${GREEN}[Dotforge]${RESET} $*"; }
+warn()    { echo -e "${YELLOW}[Dotforge]${RESET} $*"; }
+error()   { echo -e "${RED}[Dotforge] ERROR:${RESET} $*" >&2; exit 1; }
 step()    { echo -e "\n${BOLD}── $* ──────────────────────────────────────${RESET}"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOTFORGE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+Dotforge_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 
 # ── Step 1: Pull latest from git ──────────────────────────────────────────────
 
 step "Pulling latest changes"
 
-cd "$DOTFORGE_ROOT"
+cd "$Dotforge_ROOT"
 
 if [ ! -d ".git" ]; then
-    error "Not a git repository: $DOTFORGE_ROOT"
+    error "Not a git repository: $Dotforge_ROOT"
 fi
 
 local_branch=$(git rev-parse --abbrev-ref HEAD)
 info "Branch: $local_branch"
 
-# Stash any local uncommitted changes to dotforge files
+# Stash any local uncommitted changes to Dotforge files
 if ! git diff --quiet; then
     warn "Uncommitted local changes detected — stashing..."
-    git stash push -m "dotforge update stash $(date +%Y-%m-%d)"
+    git stash push -m "Dotforge update stash $(date +%Y-%m-%d)"
     STASHED=true
 else
     STASHED=false
@@ -80,7 +80,7 @@ else
 fi
 
 echo ""
-echo -e "${GREEN}${BOLD}dotforge updated successfully.${RESET}"
+echo -e "${GREEN}${BOLD}Dotforge updated successfully.${RESET}"
 echo ""
 echo "  Run 'source ~/.bashrc' to reload shell config."
 echo ""
