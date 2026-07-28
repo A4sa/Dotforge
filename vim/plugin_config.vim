@@ -80,7 +80,7 @@ Plug 'plasticboy/vim-markdown'               " Enhanced Markdown support — syn
 " ── Embedded-Specific (Optional) ─────────────────────────────────────────────
 "Plug 'stevearc/vim-arduino'                 " Arduino CLI integration — compile, upload, serial monitor from Vim.
 "Plug 'normen/vim-pio'                       " PlatformIO project management inside Vim. 
-Plug 'msaf1980/vim-dt'                      " Device Tree Source syntax highlighting and indentation.
+"Plug 'msaf1980/vim-dt'                      " Device Tree Source syntax highlighting and indentation.
 
 call plug#end()
 
