@@ -13,14 +13,6 @@
 #  Description : Sources all dotforge shell files from one place.
 #                Users paste ONE block into their ~/.bashrc — done.
 #
-#  HOW TO INSTALL
-#  --------------
-#  One-time setup. Add this at the bottom of your ~/.bashrc:
-#
-#    source ~/dotforge/shell/bashrc_append
-#
-#  Or let the install script do it automatically:
-#    ./scripts/install.sh
 #
 #  WHAT THIS FILE DOES
 #  -------------------
@@ -34,26 +26,15 @@
 # ============================================================================
 
 
-# ============================================================================
-# GUARD — only run in interactive shells
-# ============================================================================
-#
-# WHY: This file gets sourced by ~/.bashrc which itself can be called by
-#      non-interactive shells (scripts, SSH commands, cron jobs).
-#      Settings like PS1, stty, and history only make sense interactively.
-#      This guard prevents side effects in automated contexts.
-
+# This file gets sourced by ~/.bashrc which itself can be called by non-interactive shells (scripts, SSH commands, cron jobs).
 [[ $- != *i* ]] && return
 
 
 # ============================================================================
 # DOTFORGE ROOT
 # ============================================================================
-#
-# WHAT: Resolve the dotforge repo location dynamically.
-# WHY:  Hardcoding ~/dotforge breaks if someone clones to a different path.
-#       This resolves the actual location of this file at runtime.
 
+# Resolve the dotforge repo location dynamically.
 DOTFORGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 
@@ -72,14 +53,6 @@ if [ -f "$DOTFORGE_DIR/shell/bash_functions" ]; then
 fi
 
 # bash_local — your private machine-specific config (NOT in the repo)
-# Create this file at ~/.bash_local with your personal project paths:
-#
-#   alias sdk='cd ~/Ambarella/REV_B/ambarella/'
-#   alias work='cd ~/Workspace/'
-#   alias dts='vim ./boards/cv25_hazelnut/bsp/cv25_hazelnut.dts'
-#   export TFTP_DIR=/var/lib/tftpboot
-#   xc arm64 aarch64-linux-gnu   # auto-set toolchain on login
-#
 if [ -f "$HOME/.bash_local" ]; then
     source "$HOME/.bash_local"
 fi
@@ -89,23 +62,11 @@ fi
 # PROMPT (PS1)
 # ============================================================================
 #
-# WHAT: A clean, informative prompt for developers.
-#
 # FORMAT:
 #   user@host:~/path [branch] $
 #   └── green if last command succeeded, red if it failed
 #
-# WHAT EACH PART SHOWS:
-#   \u          — username
-#   \h          — hostname (useful when SSH'd into multiple machines)
-#   \w          — current directory (full path, ~ for home)
-#   git branch  — current git branch (blank if not in a repo)
-#   exit code   — $ turns red when the last command failed
 #
-# WHY THIS MATTERS FOR EMBEDDED WORK:
-#   - hostname reminds you which machine you're on (dev box vs build server)
-#   - git branch tells you if you're on the right kernel/BSP branch
-#   - red $ after a failed make is an instant visual signal
 
 # Helper: get current git branch
 _git_branch() {
@@ -123,51 +84,45 @@ _CYAN='\[\033[0;36m\]'
 _RED='\[\033[0;31m\]'
 _BOLD='\[\033[1m\]'
 
-# WHAT: PS1 — the prompt shown before every command.
-# The exit-code check ($?) must be the very first thing evaluated,
-# before any other command runs and overwrites the exit code.
+# PS1 — the prompt shown before every command.
 PS1="${_CYAN}${_BOLD}\u${_RESET}${_CYAN}@\h${_RESET}:${_BLUE}\w${_RESET}${_YELLOW}\$(_git_branch)${_RESET} \$([ \$? -eq 0 ] && echo '${_GREEN}\$${_RESET}' || echo '${_RED}\$${_RESET}') "
 
-# WHAT: PS2 — shown when a command continues on the next line (after \).
+# PS2 — shown when a command continues on the next line (after \).
 PS2="${_YELLOW}→ ${_RESET}"
 
 
 # ============================================================================
 # HISTORY
 # ============================================================================
-#
-# WHY CONFIGURE HISTORY?
-# The default bash history (500 lines, no timestamps, shared across all
-# terminals) loses commands you need and pollutes history with commands
-# you don't. These settings fix that.
 
-# WHAT: Store 10,000 lines in memory and 20,000 lines on disk.
-# WHY:  Kernel builds, long cmake commands, cross-compile invocations —
-#       you want to find these days or weeks later.
+# Store 10,000 lines in memory and 20,000 lines on disk.
 HISTSIZE=10000
 HISTFILESIZE=20000
 
-# WHAT: Add timestamps to history entries.
-# WHY:  'history | grep make' shows when you last built — useful for
-#       knowing when a build was clean before a regression appeared.
+# Add timestamps to history entries.
 HISTTIMEFORMAT="%Y-%m-%d %H:%M:%S  "
 
-# WHAT: Append to history file, don't overwrite it.
-# WHY:  Multiple terminal windows = multiple bash sessions. Without this,
-#       closing any window overwrites history with only that session's commands.
+# Append to history file, don't overwrite it.
 shopt -s histappend
 
-# WHAT: Save history after every command, not just on exit.
-# WHY:  If your terminal crashes or you close it, commands run in that
-#       session are preserved because they were written immediately.
-PROMPT_COMMAND="history -a; history -c; history -r; $PROMPT_COMMAND"
+# Helper: Sync history while preserving the exit code ($?) of the last command
+_dotforge_sync_history() {
+    local exit_status=$?
+    history -a
+    history -c
+    history -r
+    return $exit_status
+}
 
-# WHAT: Don't save duplicate commands or commands starting with a space.
-#   ignoredups — skip if the same as the previous command
-#   ignorespace — skip if command starts with a space (useful for secrets)
+# Save history after every command, not just on exit.
+if [[ ";$PROMPT_COMMAND;" != *";_dotforge_sync_history;"* ]]; then
+    PROMPT_COMMAND="_dotforge_sync_history; $PROMPT_COMMAND"
+fi
+
+# Don't save duplicate commands or commands starting with a space.
 HISTCONTROL=ignoreboth
 
-# WHAT: Don't clutter history with these frequently-typed short commands.
+# Don't clutter history with these frequently-typed short commands.
 HISTIGNORE="ls:ll:la:cd:pwd:h:clr:clear:exit:history:bg:fg"
 
 
@@ -175,59 +130,40 @@ HISTIGNORE="ls:ll:la:cd:pwd:h:clr:clear:exit:history:bg:fg"
 # SHELL BEHAVIOR
 # ============================================================================
 
-# WHAT: Fix the terminal so Ctrl+S doesn't freeze it (XON/XOFF flow control).
-# WHY:  Ctrl+S is 'save' in Vim and many other tools. Without this line,
-#       Ctrl+S freezes the terminal and you have to press Ctrl+Q to unfreeze.
-#       This is the #1 confusing moment for developers new to Linux terminals.
+# Fix the terminal so Ctrl+S doesn't freeze it (XON/XOFF flow control).
 stty -ixon
 
-# WHAT: Prevent Ctrl+D from accidentally exiting the shell.
-# WHY:  During a long session with tmux panes open, accidentally pressing
-#       Ctrl+D closes the pane and any processes running in it.
-#       With this set, you must press Ctrl+D twice to exit.
+# Prevent Ctrl+D from accidentally exiting the shell.
 export IGNOREEOF=1
 
-# WHAT: Fix escape sequence display in terminal.
-# WHY:  Prevents control characters (^C, ^Z) from being echoed visibly
-#       in the terminal output — keeps the prompt clean.
+# Fix escape sequence display in terminal.
 stty -echoctl
 
-# WHAT: Auto-correct minor typos in cd commands.
-# WHY:  'cd Docuemtns' → 'cd Documents'. Small but saves keystrokes.
+# Auto-correct minor typos in cd commands.
 shopt -s cdspell
 
-# WHAT: Allow ** glob pattern to match recursively across directories.
-# WHY:  'ls **/*.c' finds all C files in the entire tree.
-#       Essential for quick file searches without find or fzf.
+# Allow ** glob pattern to match recursively across directories.
 shopt -s globstar
 
-# WHAT: Case-insensitive tab completion.
-# WHY:  'cd desk<Tab>' completes to 'Desktop/' even though D is uppercase.
+# Case-insensitive tab completion.
 bind "set completion-ignore-case on"
 
-# WHAT: Tab completion shows all matches immediately (no double-tab needed).
+# Tab completion shows all matches immediately (no double-tab needed).
 bind "set show-all-if-ambiguous on"
-
 
 # ============================================================================
 # EDITOR & PAGER
 # ============================================================================
 
-# WHAT: Set Vim as the default editor for git commit messages,
-#       crontab, and any program that opens $EDITOR.
+# Set Vim as the default editor for git commit messages, crontan.
 export EDITOR=vim
 export VISUAL=vim
 
-# WHAT: Set less as the default pager with useful flags.
-#   -R  — pass ANSI color codes through (so colored output stays colored)
-#   -F  — quit immediately if content fits on one screen
-#   -X  — don't clear the screen on exit (output stays visible)
+# Set less as the default pager with useful flags.
 export PAGER='less -RFX'
 export LESS='-RFX'
 
 # WHAT: Colorize man pages.
-# WHY:  Plain man pages are hard to scan. These colors make headings,
-#       bold, and underline sections visually distinct.
 export LESS_TERMCAP_mb=$'\e[1;32m'
 export LESS_TERMCAP_md=$'\e[1;32m'
 export LESS_TERMCAP_me=$'\e[0m'
@@ -241,31 +177,22 @@ export LESS_TERMCAP_us=$'\e[1;4;31m'
 # COLORS
 # ============================================================================
 
-# WHAT: Enable colors in ls, grep, and diff output.
+# Enable colors in ls, grep, and diff output.
 export CLICOLOR=1
 export GREP_OPTIONS='--color=auto'
 alias grep='grep --color=auto'
 alias diff='diff --color=auto'
 
-# WHAT: Enable GCC colored output (available since GCC 4.9).
-# WHY:  Error messages in red, warnings in magenta — instantly scannable
-#       in a wall of build output.
+# Enable GCC colored output (available since GCC 4.9).
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 
 
 # ============================================================================
 # PATH
 # ============================================================================
-#
-# WHAT: Add common developer tool locations to PATH.
-# WHY:  Tools installed without sudo (pip --user, cargo, go install, npm global)
-#       land in user-local directories that aren't in PATH by default.
 
 # Python user packages (pip install --user)
 export PATH="$HOME/.local/bin:$PATH"
-
-# Rust / Cargo binaries (rustup default install location)
-[ -d "$HOME/.cargo/bin" ] && export PATH="$HOME/.cargo/bin:$PATH"
 
 # Go binaries (go install ...)
 [ -d "$HOME/go/bin" ] && export PATH="$HOME/go/bin:$PATH"
@@ -273,9 +200,6 @@ export PATH="$HOME/.local/bin:$PATH"
 # Local scripts — your own tools and one-off scripts
 [ -d "$HOME/.local/scripts" ] && export PATH="$HOME/.local/scripts:$PATH"
 
-# Cross-compiler toolchains — adjust path to match your SDK install location
-# [ -d "/opt/toolchains/aarch64-linux-gnu/bin" ] && \
-#     export PATH="/opt/toolchains/aarch64-linux-gnu/bin:$PATH"
 
 
 # ============================================================================
@@ -283,13 +207,6 @@ export PATH="$HOME/.local/bin:$PATH"
 # ============================================================================
 
 # ── fzf — fuzzy finder ────────────────────────────────────────────────────
-#
-# WHAT: Load fzf key bindings and completion if fzf is installed.
-# WHY:  fzf provides:
-#         Ctrl+R  — fuzzy search through command history (replaces default)
-#         Ctrl+T  — fuzzy-insert a file path at the cursor
-#         Alt+C   — fuzzy cd into a directory
-# REQUIRES: sudo apt install fzf
 if command -v fzf &>/dev/null; then
     # Ubuntu apt install puts these here
     [ -f /usr/share/doc/fzf/examples/key-bindings.bash ] && \
@@ -313,45 +230,21 @@ if command -v fzf &>/dev/null; then
     fi
 fi
 
-# ── direnv — per-directory environment variables ──────────────────────────
-#
-# WHAT: Load direnv hook if installed.
-# WHY:  direnv automatically loads/unloads environment variables when you
-#       cd into a directory that has an .envrc file. Perfect for:
-#         - Activating Python venvs automatically on cd
-#         - Setting ARCH/CROSS_COMPILE for a specific project directory
-#         - Loading SDK environment scripts per project
-# REQUIRES: sudo apt install direnv
-# USAGE:    echo 'export ARCH=arm64' > .envrc && direnv allow
-if command -v direnv &>/dev/null; then
-    eval "$(direnv hook bash)"
-fi
 
 # ── zoxide — smarter cd with frecency ────────────────────────────────────
 #
-# WHAT: Load zoxide if installed — replaces cd with a frecency-aware jump.
-# WHY:  'z kernel' jumps to the directory you visit most that matches
-#       'kernel' — even if you're not in its parent. Much faster than
-#       navigating manually for frequently-visited project directories.
-# REQUIRES: cargo install zoxide  OR  sudo apt install zoxide (Ubuntu 22+)
 # USAGE:    z kernel    → jumps to your most-visited kernel directory
 #           z cv25 dts  → matches multiple path fragments
 if command -v zoxide &>/dev/null; then
     eval "$(zoxide init bash)"
 fi
-
-
 # ============================================================================
-# WELCOME MESSAGE
+# AUTO-START TMUX
 # ============================================================================
-#
-# WHAT: Print a brief system summary when a new interactive shell opens.
-# WHY:  Instant orientation — kernel version and load average at a glance
-#       when you open a new terminal or SSH into a machine.
-#       Remove this block if you prefer a silent startup.
+# Automatically start or attach to a tmux session when the shell opens.
 
-echo ""
-echo "  kernel : $(uname -r)"
-echo "  uptime : $(uptime -p)"
-echo "  load   : $(cut -d' ' -f1-3 /proc/loadavg)"
-echo ""
+# if command -v tmux &>/dev/null && [ -z "$TMUX" ] && [[ $- == *i* ]]; then
+#    exec tmux new-session -A -s forge
+# fi
+
+

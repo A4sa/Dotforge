@@ -39,19 +39,8 @@
 # ============================================================================
 # [1]  CROSS-COMPILATION
 # ============================================================================
-#
-# WHY FUNCTIONS HERE?
-# An alias cannot set environment variables that persist in the shell.
-#   alias xc='export ARCH=arm64'   ← only sets ARCH, can't take arguments
-# A function can set multiple variables, validate input, and print feedback.
 
-# WHAT: Set the cross-compilation toolchain for a target architecture.
-# USAGE:
-#   xc arm64  aarch64-linux-gnu        64-bit ARM  (most modern SoCs)
-#   xc arm    arm-linux-gnueabihf      32-bit ARM  hard-float
-#   xc arm    arm-linux-gnueabi        32-bit ARM  soft-float
-#   xc riscv  riscv64-linux-gnu        RISC-V 64-bit
-#   xc mips   mips-linux-gnu           MIPS 32-bit
+# Set the cross-compilation toolchain for a target architecture.
 xc() {
     if [ -z "$1" ] || [ -z "$2" ]; then
         echo "Usage: xc <ARCH> <CROSS_COMPILE_PREFIX>"
@@ -65,14 +54,14 @@ xc() {
         return 1
     fi
     export ARCH="$1"
-    export CROSS_COMPILE="$2-"
+    local prefix="${2%-}"
+    export CROSS_COMPILE="${prefix}-"
     echo "Toolchain set:"
     echo "  ARCH          = $ARCH"
     echo "  CROSS_COMPILE = $CROSS_COMPILE"
 }
 
-# WHAT: Show the currently active cross-compilation toolchain.
-# WHY:  Sanity check before running make — wrong toolchain = confusing errors.
+# Show the currently active cross-compilation toolchain.
 xc-show() {
     if [ -z "$ARCH" ] && [ -z "$CROSS_COMPILE" ]; then
         echo "No cross-compile toolchain set (native build)"
@@ -82,9 +71,7 @@ xc-show() {
     fi
 }
 
-# WHAT: Clear the cross-compilation environment (return to native build).
-# WHY:  After cross-compiling, host tools need native build. Unsetting
-#       ARCH and CROSS_COMPILE returns make to native behavior.
+# Clear the cross-compilation environment (return to native build).
 xc-clear() {
     unset ARCH CROSS_COMPILE
     echo "Cross-compile env cleared — now building natively"
@@ -95,10 +82,7 @@ xc-clear() {
 # [2]  ADB — ANDROID DEBUG BRIDGE
 # ============================================================================
 
-# WHAT: Push a file to the ADB device and set executable permissions.
-# USAGE: adbpush ./my_binary /data/local/tmp/
-# WHY:  The standard test-binary deployment loop in one command.
-#       Validates arguments before running to avoid silent failures.
+# Push a file to the ADB device and set executable permissions.
 adbpush() {
     if [ -z "$1" ] || [ -z "$2" ]; then
         echo "Usage: adbpush <local_file> <remote_path>"
@@ -115,9 +99,7 @@ adbpush() {
     echo "Pushed and chmod +x: $2/$filename"
 }
 
-# WHAT: Pull a file from the ADB device to the current directory.
-# USAGE: adbpull /data/local/tmp/logfile.txt
-# WHY:  Retrieve logs, crash dumps, or output files from the target.
+# Pull a file from the ADB device to the current directory.
 adbpull() {
     if [ -z "$1" ]; then
         echo "Usage: adbpull <remote_file> [local_destination]"
@@ -134,52 +116,51 @@ adbpull() {
 # [3]  KERNEL / BSP HELPERS
 # ============================================================================
 
-# WHAT: Search for a kernel config option by name in .config.
-# USAGE: kgrep USB_SERIAL
-#        kgrep I2C
-# WHY:  Faster than scrolling menuconfig when you know the config name.
-#       Works from anywhere inside the kernel tree.
+# Search for a kernel config option by name in .config.
 kgrep() {
     if [ -z "$1" ]; then
         echo "Usage: kgrep <CONFIG_OPTION>"
         echo "  e.g. kgrep USB_SERIAL"
         return 1
     fi
-    # Search upward for .config if not in current dir
-    local config
-    config=$(find . -maxdepth 3 -name ".config" 2>/dev/null | head -1)
+    # Search upward for .config starting from current dir
+    local dir="$PWD"
+    local config=""
+    while [ "$dir" != "/" ]; do
+        if [ -f "$dir/.config" ]; then
+            config="$dir/.config"
+            break
+        fi
+        dir=$(dirname "$dir")
+    done
     if [ -z "$config" ]; then
-        echo "No .config found (searched 3 levels deep)"
+        echo "No .config found in any parent directories"
         return 1
     fi
     echo "Searching: $config"
     grep -i "$1" "$config" || echo "No match for '$1'"
 }
 
-# WHAT: Check if a kernel module is currently loaded.
-# USAGE: modcheck i2c_dev
-#        modcheck snd_usb
-# WHY:  Faster than 'lsmod | grep' — same result with better output.
+# Check if a kernel module is currently loaded.
 modcheck() {
     if [ -z "$1" ]; then
         echo "Usage: modcheck <module_name>"
         echo "  e.g. modcheck i2c_dev"
         return 1
     fi
-    if lsmod | grep -qi "^$1"; then
-        echo "LOADED:   $1"
-        lsmod | grep -i "^$1"
+    # Normalize dashes to underscores for searching
+    local query="${1//-/_}"
+    local matched_mod
+    matched_mod=$(lsmod | sed 's/-/_/g' | grep -i "^${query}\b" | awk '{print $1}')
+    if [ -n "$matched_mod" ]; then
+        echo "LOADED:   $1 (as $matched_mod)"
+        lsmod | grep -i "^${matched_mod}\b"
     else
         echo "NOT LOADED: $1"
     fi
 }
 
-# WHAT: Show dmesg output filtered by a keyword.
-# USAGE: dlog i2c
-#        dlog "usb 1-1"
-#        dlog error
-# WHY:  Filters dmesg noise down to the subsystem you're debugging.
-#       -T shows human-readable timestamps.
+# Show dmesg output filtered by a keyword.
 dlog() {
     if [ -z "$1" ]; then
         echo "Usage: dlog <keyword>"
@@ -190,10 +171,7 @@ dlog() {
     sudo dmesg -T | grep -i "$1"
 }
 
-# WHAT: Unload and reload a kernel module in one command.
-# USAGE: rmmod_insmod my_driver
-# WHY:  The standard driver iteration loop: edit → make → reload.
-#       Handles the case where the module wasn't loaded (no error).
+# Unload and reload a kernel module in one command.
 rmmod_insmod() {
     if [ -z "$1" ]; then
         echo "Usage: rmmod_insmod <module_name>"
@@ -203,15 +181,23 @@ rmmod_insmod() {
     local mod="$1"
     # Remove .ko extension if provided
     mod="${mod%.ko}"
+    # Normalize dashes/underscores for module check
+    local query="${mod//-/_}"
 
-    if lsmod | grep -q "^${mod}"; then
-        sudo rmmod "$mod" && echo "Removed: $mod" || return 1
+    local matched_mod
+    matched_mod=$(lsmod | sed 's/-/_/g' | grep -i "^${query}\b" | awk '{print $1}')
+
+    if [ -n "$matched_mod" ]; then
+        # Use the name found in lsmod to rmmod
+        sudo rmmod "$matched_mod" && echo "Removed: $matched_mod" || return 1
     else
         echo "Note: $mod was not loaded, skipping rmmod"
     fi
 
     if [ -f "${mod}.ko" ]; then
         sudo insmod "${mod}.ko" && echo "Loaded:  ${mod}.ko"
+    elif [ -f "${mod//-/_}.ko" ]; then
+        sudo insmod "${mod//-/_}.ko" && echo "Loaded:  ${mod//-/_}.ko"
     else
         echo "Error: ${mod}.ko not found in current directory"
         return 1
@@ -223,10 +209,7 @@ rmmod_insmod() {
 # [4]  WORKSPACE HELPERS
 # ============================================================================
 
-# WHAT: Create a directory and immediately cd into it.
-# USAGE: mkcd my_new_project
-# WHY:  'mkdir foo && cd foo' is a sequence everyone types every day.
-#       One command, zero repetition.
+# Create a directory and immediately cd into it.
 mkcd() {
     if [ -z "$1" ]; then
         echo "Usage: mkcd <directory_name>"
@@ -235,11 +218,7 @@ mkcd() {
     mkdir -p "$1" && cd "$1" || return 1
 }
 
-# WHAT: Move up N directory levels.
-# USAGE: up        → go up 1 level (same as cd ..)
-#        up 3      → go up 3 levels (same as cd ../../..)
-# WHY:  'up 4' is faster than typing '../../../../' especially when
-#       deep inside a kernel or SDK directory tree.
+# Move up N directory levels.
 up() {
     local levels="${1:-1}"
     local path=""
@@ -249,35 +228,21 @@ up() {
     cd "$path" || return 1
 }
 
-# WHAT: Fuzzy-search directories and cd into the selected one.
-# USAGE: fcd
-# WHY:  In a BSP tree with hundreds of directories, tab-completion is
-#       slow. fcd lets you type fragments and jump instantly.
-# REQUIRES: fzf — sudo apt install fzf
+# Fuzzy-search directories and cd into the selected one.
 fcd() {
     local target
     target=$(find . -type d -not -path '*/\.*' -not -path '*/build*' \
         2>/dev/null | fzf --preview 'ls {}') && cd "$target" || return 1
 }
 
-# WHAT: Fuzzy-search files and open the selected one in Vim.
-# USAGE: vf
-#        vf *.c        (pre-filter to C files)
-# WHY:  'vim $(fzf)' with a bat preview panel. The most-used navigation
-#       shortcut for jumping into any file in a large source tree.
-# REQUIRES: fzf, bat — sudo apt install fzf bat
+# Fuzzy-search files and open the selected one in Vim.
 vf() {
     local file
     file=$(fzf --preview="bat --style=numbers --color=always {}" "$@") \
         && vim "$file"
 }
 
-# WHAT: Extract any archive format with one command.
-# USAGE: extract file.tar.gz
-#        extract file.zip
-#        extract file.tar.bz2
-# WHY:  Different tools for different formats is hard to remember.
-#       One function handles them all.
+# Extract any archive format with one command.
 extract() {
     if [ -z "$1" ]; then
         echo "Usage: extract <archive_file>"
@@ -312,10 +277,7 @@ extract() {
 # [5]  GIT HELPERS
 # ============================================================================
 
-# WHAT: Sync the current branch — fetch + rebase in one step.
-# USAGE: gsync
-# WHY:  'git fetch && git rebase origin/$(current_branch)' is the correct
-#       way to update without a merge commit. This does it in one word.
+# Sync the current branch — fetch + rebase in one step.
 gsync() {
     local branch
     branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
@@ -327,78 +289,36 @@ gsync() {
     git fetch origin && git rebase "origin/$branch"
 }
 
-# WHAT: Pretty one-line git log with graph, date, and author.
-# USAGE: glog
-#        glog -10       (last 10 commits only)
-# WHY:  'git log --oneline --graph' is long to type and the default format
-#       lacks author and date. This formats it cleanly.
+# Pretty one-line git log with graph, date, and author.
 glog() {
     git log --oneline --graph --decorate \
         --format="%C(yellow)%h%C(reset) %C(blue)%ad%C(reset) %C(green)%an%C(reset) %s" \
         --date=short "$@"
 }
 
-# WHAT: Delete all local branches that have already been merged into main/master.
-# USAGE: gbclean
-# WHY:  After merging feature branches, stale local branches accumulate.
-#       This safely removes only branches that are fully merged —
-#       never touches unmerged branches, never touches main/master/develop.
-gbclean() {
-    local main_branch
-    # Detect whether the repo uses 'main' or 'master'
-    main_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null \
-        | sed 's@^refs/remotes/origin/@@')
-    main_branch="${main_branch:-main}"
-
-    echo "Base branch: $main_branch"
-    echo "Branches to delete:"
-    git branch --merged "$main_branch" \
-        | grep -v "^\*" \
-        | grep -vE "^\s*(${main_branch}|master|develop)$"
-
-    echo ""
-    read -rp "Delete these branches? [y/N] " confirm
-    if [[ "$confirm" =~ ^[Yy]$ ]]; then
-        git branch --merged "$main_branch" \
-            | grep -v "^\*" \
-            | grep -vE "^\s*(${main_branch}|master|develop)$" \
-            | xargs -r git branch -d
-        echo "Done."
-    else
-        echo "Cancelled."
-    fi
-}
 
 
 # ============================================================================
 # [6]  SYSTEM INFO
 # ============================================================================
 
-# WHAT: Print a quick system summary — OS, kernel, CPU, RAM, disk.
-# USAGE: sysinfo
-# WHY:  When you SSH into a machine for the first time or switch between
-#       boards, a fast system snapshot is the first thing you run.
+# Print a quick system summary. Usage: sysinfo
 sysinfo() {
-    echo "============================================"
+    echo "================================================"
     echo " System Information"
-    echo "============================================"
+    echo "================================================"
     echo " OS       : $(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"')"
     echo " Kernel   : $(uname -r)"
     echo " Arch     : $(uname -m)"
     echo " Hostname : $(hostname)"
-    echo " Uptime   : $(uptime -p)"
     echo " CPU      : $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | sed 's/^ //')"
     echo " Cores    : $(nproc) logical / $(grep -c '^processor' /proc/cpuinfo) physical"
     echo " RAM      : $(free -h | awk '/^Mem:/ {print $3 " used / " $2 " total"}')"
     echo " Disk     : $(df -h / | awk 'NR==2 {print $3 " used / " $2 " total (" $5 " full)"}')"
-    echo "============================================"
+    echo "================================================"
 }
 
-# WHAT: Show which process is using a given port.
-# USAGE: portinfo 8080
-#        portinfo 22
-# WHY:  Useful during development when a port is already in use and
-#       you need to find and kill the occupying process.
+# Show which process is using a given port.  Usage: portinfo <port_number>
 portinfo() {
     if [ -z "$1" ]; then
         echo "Usage: portinfo <port_number>"
@@ -409,10 +329,6 @@ portinfo() {
 }
 
 # WHAT: Show CPU load per core in real time.
-# USAGE: cpuload
-# WHY:  During a parallel build, see which cores are saturated and whether
-#       the build system is using all available cores efficiently.
-# REQUIRES: mpstat — sudo apt install sysstat
 cpuload() {
     if command -v mpstat &>/dev/null; then
         mpstat -P ALL 1 3
@@ -428,9 +344,7 @@ cpuload() {
 # [7]  NETWORK HELPERS
 # ============================================================================
 
-# WHAT: Show both the local and public IP addresses.
-# USAGE: myip
-# WHY:  Quick check when configuring TFTP, NFS, or SSH for board communication.
+# Show both the local and public IP addresses. Usage: myip 
 myip() {
     echo "Local IPs:"
     ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' \
@@ -439,11 +353,7 @@ myip() {
     curl -s --max-time 3 https://ifconfig.me && echo || echo "  (no internet / timeout)"
 }
 
-# WHAT: Check if a remote host's port is open and reachable.
-# USAGE: portscan 192.168.1.100 22
-#        portscan 192.168.1.100 8080
-# WHY:  Verify SSH, TFTP, or HTTP connectivity to a target board without
-#       installing nmap. Uses only bash built-ins (no extra tools needed).
+# Check if a remote host's port is open and reachable. Usage: portscan <host> <port>
 portscan() {
     if [ -z "$1" ] || [ -z "$2" ]; then
         echo "Usage: portscan <host> <port>"

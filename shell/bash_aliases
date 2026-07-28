@@ -38,7 +38,7 @@ alias h='history'           # Example h | grep make
 alias o='xdg-open'          # Open files/URLs in default apps
 
 # ====================== SYSTEM & PACKAGE MANAGEMENT ======================
-alias update='sudo apt update && sudo apt upgrade -y && sudo apt remove '
+alias update='sudo apt update && sudo apt upgrade -y && sudo apt autoremove -y'
 alias install='sudo apt install'
 alias remove='sudo apt remove -y'
 alias reboot='sudo reboot'
@@ -70,7 +70,7 @@ alias gps='git push'
 alias python='python3'
 alias py='python3'
 alias pip='pip3'
-alias env='source venv/bin/activate'
+alias va='source venv/bin/activate'
 alias envd='deactivate'
 
 # ============================== DOCKER ==============================
@@ -100,16 +100,6 @@ alias shell='adb shell'
 alias adbdev='adb devices'               # List connected devices
 alias adblog='adb logcat'                # Stream Android logcat output
 alias adbr='adb reboot'                  # Reboot the target device
-
-# USAGE: adbpush ./my_binary /data/local/tmp/
-adbpush() {
-    if [ -z "$1" ] || [ -z "$2" ]; then
-        echo "Usage: adbpush <local_file> <remote_path>"
-        return 1
-    fi
-    adb push "$1" "$2" && adb shell chmod +x "$2/$( basename $1 )"
-    echo "Pushed and chmod +x: $2/$(basename $1)"
-}
 
 # ===================== SERIAL CONSOLE ================================
 
@@ -145,46 +135,9 @@ alias lsserial='echo "=== by-id (stable) ===" && \
 # =====================  KERNEL / BSP HELPERS ===========================
 alias kconfig='make menuconfig'            # Open Kernel config menu
 
-# Search for Kernal config by name ────> kgrep USB_SERIAL
-kgrep() {
-    if [ -z "$1" ]; then
-        echo "Usage: kgrep <CONFIG_OPTION>"
-        echo "  e.g. kgrep USB_SERIAL"
-        return 1
-    fi
-    grep -i "$1" .config 2>/dev/null || echo "No .config found in current directory"
-}
-
-# Ceck if Kernel module is loaded ────> modcheck i2c_dev
-modcheck() {
-    lsmod | grep -i "$1" || echo "Module '$1' is not loaded"
-}
-
-# demsg output for specific  ────> dlog i2c 
-dlog() {
-    sudo dmesg  | grep -i "$1"
-}
+# Note: kgrep, modcheck, and dlog are defined with proper validation in bash_functions
 
 alias buildlog='tail -50 build.log'
 alias buildlogerr='grep -E "error:|warning:" build.log | tail -30'
 
-
-# =================  Project Directories ====================
-alias sdk='cd ~/Ambarella/REV_B/ambarella/'
-alias work='cd ~/Workspace/'
-alias dts='vim ./boards/cv25_hazelnut/bsp/cv25_hazelnut.dts'
-alias dtsi='vim ./kernel/linux-5.15.158/arch/arm64/boot/dts/ambarella/ambarella-cv25.dtsi'
-alias qnn='cd ~/Android/qairt/2.34.0.250424/'
-alias venv='source bin/venv/bin/activate'
-alias snpe='source bin/envsetup.sh'
-
-# Android SDK and NDK
-export ANDROID_HOME="/home/ev/Android/Sdk"
-export ANDROID_SDK_ROOT="/home/ev/Android/Sdk"
-export ANDROID_NDK_ROOT="/home/ev/Android/android-ndk-r26c/"
-export ANDROID_NDK_HOME="/home/ev/Android/android-ndk-r26c/"
-export PATH=$PATH:$ANDROID_NDK_ROOT
-
-# Local user bin
-export PATH=$HOME/.local/bin:$PATH
 
