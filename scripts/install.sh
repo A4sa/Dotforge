@@ -91,6 +91,7 @@ LINKS=(
     "vim/snippets/python.snippets|.vim/UltiSnips/python.snippets"
     "vim/snippets/make.snippets|.vim/UltiSnips/make.snippets"
     "tmux/tmux.conf|.tmux.conf"
+    "tmux/clip.sh|.local/bin/dotforge-clip"      # tmux copy → desktop clipboard
 )
 
 BASHRC_BEGIN="# >>> dotforge >>>"
@@ -119,6 +120,9 @@ DEPS=(
     "picocom:picocom:picocom:picocom"                # serial console (con)
     "xclip:xclip:xclip:xclip"                        # tmux/Vim clipboard on X11
 )
+# Wayland sessions need wl-clipboard: xclip only reaches Wayland apps through
+# XWayland, which is unreliable.
+[ -n "${WAYLAND_DISPLAY:-}" ] && DEPS+=("wl-copy:wl-clipboard:wl-clipboard:wl-clipboard")
 
 detect_pkg_manager() {
     if command -v apt-get &>/dev/null; then echo apt

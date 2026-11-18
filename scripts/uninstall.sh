@@ -83,7 +83,7 @@ remove_link() {
 
 for f in .vimrc .tmux.conf .vim/plugin_config.vim .vim/key_mapping.vim \
          .vim/UltiSnips/c.snippets .vim/UltiSnips/python.snippets \
-         .vim/UltiSnips/make.snippets; do
+         .vim/UltiSnips/make.snippets .local/bin/dotforge-clip; do
     remove_link "$HOME/$f"
 done
 
