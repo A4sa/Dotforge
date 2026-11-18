@@ -164,11 +164,56 @@ endtry
 "   let g:webdevicons_enable = 0
 
 " ── Tabline (buffer tabs at top of screen) ────────────────────────────────────
-let g:airline#extensions#tabline#enabled = 1              " Show open buffers as tabs
-let g:airline#extensions#tabline#left_sep = ' '           " Active & Inactive tab
-let g:airline#extensions#tabline#left_alt_sep = '|'
-let g:airline#extensions#tabline#formatter = 'unique_tail' " filename in tabs (not full path)
-let g:airline#extensions#tabline#buffer_idx_mode = 1      " Numbers on tabs: <Leader>1..9 jumps
+" Every open file is a tab. Switch with Tab / Shift-Tab, or <Leader>1..9.
+"   ▸ the CURRENT file is a solid bright block (easy to find among .c / .h files)
+"   ▸ other files are dim
+"   ▸ a file with unsaved changes shows a red/orange block and a  ●
+"   ▸ files with the same name in different folders show the folder
+"     (foo.h  →  drivers/foo.h and include/foo.h)
+let g:airline#extensions#tabline#enabled = 1
+let g:airline#extensions#tabline#show_buffers = 1
+let g:airline#extensions#tabline#show_splits = 0        " no "buffers" / split counters
+let g:airline#extensions#tabline#show_tab_nr = 0
+let g:airline#extensions#tabline#show_tab_type = 0
+let g:airline#extensions#tabline#show_close_button = 0
+let g:airline#extensions#tabline#formatter = 'unique_tail_improved'
+let g:airline#extensions#tabline#buffer_idx_mode = 1    " numbers on tabs: <Leader>1..9 jumps
+let g:airline#extensions#tabline#buffer_idx_format = {
+  \ '0': '0 ', '1': '1 ', '2': '2 ', '3': '3 ', '4': '4 ',
+  \ '5': '5 ', '6': '6 ', '7': '7 ', '8': '8 ', '9': '9 '}
+let g:airline#extensions#tabline#buffers_label = ''
+let g:airline#extensions#tabline#fnamecollapse = 0
+" Flat look: a space between tabs, no powerline arrows (some fonts draw them
+" as stray symbols).
+let g:airline#extensions#tabline#left_sep = ' '
+let g:airline#extensions#tabline#left_alt_sep = ' '
+let g:airline#extensions#tabline#right_sep = ' '
+let g:airline#extensions#tabline#right_alt_sep = ' '
+let g:airline#extensions#tabline#tabs_label = ''
+" Modified-file marker shown after the name.
+if !exists('g:airline_symbols')
+  let g:airline_symbols = {}
+endif
+let g:airline_symbols.modified = ' ●'
+
+" Tab colours (gruvbox). Palette format: [gui-fg, gui-bg, cterm-fg, cterm-bg, attr]
+function! DotforgeAirlinePatch(palette) abort
+  if get(g:, 'airline_theme', '') !=# 'gruvbox' || !has_key(a:palette, 'tabline')
+    return
+  endif
+  let l:t = a:palette.tabline
+  " current file: bright yellow block, bold
+  let l:t.airline_tabsel      = ['#1d2021', '#fabd2f', 234, 214, 'bold']
+  " other files: quiet grey
+  let l:t.airline_tab         = ['#a89984', '#3c3836', 246, 237, '']
+  " current file with unsaved changes: red block
+  let l:t.airline_tabmod      = ['#1d2021', '#fb4934', 234, 167, 'bold']
+  " other files with unsaved changes: orange text
+  let l:t.airline_tabmod_unsel = ['#fe8019', '#3c3836', 208, 237, '']
+  let l:t.airline_tabfill     = ['#a89984', '#1d2021', 246, 234, '']
+  let l:t.airline_tabtype     = ['#1d2021', '#8ec07c', 234, 108, 'bold']
+endfunction
+let g:airline_theme_patch_func = 'DotforgeAirlinePatch'
 
 " ── Statusline content ────────────────────────────────────────────────────────
 let g:airline_theme = 'gruvbox'
