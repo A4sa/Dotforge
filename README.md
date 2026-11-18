@@ -49,6 +49,11 @@ source ~/.bashrc
 vim
 ```
 
+<p align="center">
+  <img src="assets/09-install.png" alt="End of ./scripts/install.sh showing the linked files, backup location and next steps" width="620">
+  <br><sub>The end of a run: every file linked, your old files backed up, and the next steps.</sub>
+</p>
+
 The installer checks dependencies (apt / dnf / pacman), backs up any file it replaces, **symlinks** the configs into `$HOME`, adds one marked block to `~/.bashrc`, installs the Vim plugins and creates a `~/.bash_local` template for your private paths. Running it again is safe.
 
 ---
@@ -89,7 +94,10 @@ The installer checks dependencies (apt / dnf / pacman), backs up any file it rep
 
 > **Prefix+A** builds this layout. The build and console commands are typed but not run — add the target / port and press Enter.
 
-<!-- Screenshots: add images to assets/screenshots/ and reference them here. -->
+<p align="center">
+  <img src="assets/01-workspace.png" alt="Dotforge workspace: Vim with NERDTree on the left, htop and a shell on the right, every pane labelled with what it is doing" width="100%">
+  <br><sub>One tmux window, three panes: <b>editing</b> in Vim, <b>monitoring</b> in htop, a <b>shell</b> for kernel logs. The status bar at the bottom shows git, directory, load, host and time.</sub>
+</p>
 
 ---
 
@@ -109,7 +117,8 @@ The installer checks dependencies (apt / dnf / pacman), backs up any file it rep
 | `bear` | `compile_commands.json` for non-kernel projects | `bear` |
 | `dtc` | `dtsdump` | `device-tree-compiler` |
 | `picocom` | Serial console (`con`) | `picocom` |
-| `xclip` | Clipboard on X11 | `xclip` |
+| `wl-clipboard` | tmux copy to the clipboard on Wayland | `wl-clipboard` |
+| `xclip` | tmux copy to the clipboard on X11 | `xclip` |
 
 `install.sh` detects missing tools and offers to install them (`-y` to answer yes, `--no-deps` to skip).
 
@@ -121,6 +130,7 @@ The installer checks dependencies (apt / dnf / pacman), backs up any file it rep
 | `~/.vim/plugin_config.vim`, `~/.vim/key_mapping.vim` | `vim/*.vim` |
 | `~/.vim/UltiSnips/*.snippets` | `vim/snippets/*.snippets` |
 | `~/.tmux.conf` | `tmux/tmux.conf` |
+| `~/.local/bin/dotforge-clip` | `tmux/clip.sh` — tmux copy → desktop clipboard |
 | `~/.bashrc` | gets one block between `# >>> dotforge >>>` and `# <<< dotforge <<<` |
 
 Everything is a symlink into the repo, so a `git pull` updates all of it. Your previous files are saved under `~/.dotforge_backup/<date>/` with their original paths.
@@ -155,6 +165,11 @@ Removes only the symlinks that point into the repo and the marked `~/.bashrc` bl
 
 ## Vim Configuration
 
+<p align="center">
+  <img src="assets/03-vim.png" alt="Vim with three open files as tabs; the current file, v4l2_device.h, is a solid yellow block" width="100%">
+  <br><sub>Every open file is a tab. The <b>current file is the solid yellow block</b>; switch with <code>Tab</code> / <code>Shift+Tab</code>. Airline status line below.</sub>
+</p>
+
 ### Plugin Stack
 
 | Plugin | Purpose |
@@ -181,6 +196,7 @@ Device Tree syntax (`.dts`, `.dtsi`, `.dtso`, `.its`) is built into Vim.
 
 - **Never lose work** — persistent undo across sessions, swap files in `~/.vim/swap` for crash / SSH-drop recovery.
 - **Kernel-style detection** — files in a Linux / U-Boot tree (found by `Kbuild` + `MAINTAINERS`), or an out-of-tree module (`obj-m` Makefile), automatically get 8-wide hard tabs and a 100-column marker. Mark any vendor tree with `touch .kernel-style`.
+- **Buffer tabs** — every open file is a tab at the top. The **current file is a solid yellow block**, the others are grey, and a file with unsaved changes turns red/orange with a `●`. Switch with `Tab` / `Shift+Tab` or `Space 1`…`9`. Two files with the same name (`foo.h` in two folders) show their folder.
 - **Visible whitespace** — tabs, trailing spaces and non-breaking spaces are shown, so a tab/space mix in a patch is caught before `checkpatch`.
 - **`:Checkpatch`** (`Space cp`) — runs the kernel's `checkpatch.pl` on the file; findings go to the quickfix list.
 - **cscope** connects to the nearest `cscope.out` above the file; rebuild with `mkidx`, reconnect with `:CscopeReload`.
@@ -270,20 +286,53 @@ Sessions persist after you close the terminal. Start a 2-hour kernel build, disc
 
 ### Status Bar
 
+<p align="center">
+  <img src="assets/02-tmux-statusbar.png" alt="tmux status bar: mode and session on the left, window tab in the centre, git branch, directory, load, host and time on the right" width="100%">
+</p>
+
+Flat, solid segments in Catppuccin Mocha. Every item is a coloured icon block plus a grey text block; the window tabs sit in the centre.
+
 ```
-( TMUX)( bsp)  (1 vim)(2 build 󱅫)        main  linux ( 0.42 │ 󰍛 37%)( edgeverse)( 23:10)
+ TMUX   bsp          1 vim    2 build 󱅫         main   linux   0.42  37%   edgeverse   Wed 18 Nov  23:10 
+ └ mode + session            └ window tabs (active = solid mauve)    └ git · dir · load/RAM · host · date/time
 ```
 
 | Segment | Shows |
 |---|---|
 | Mode | `TMUX` green · `PREFIX` red after Ctrl+B · `COPY` yellow · `ZOOM` peach |
-| Session | Session name — name it with `tmux new -s bsp` or rename with `Prefix+$` |
-| Windows | `index name`; active window in mauve; 󰁓 zoomed, 󱅫 new output in a background window (build finished) |
-| Git / dir | Branch and directory of the active pane |
+| Session | Session name — create with `tmux new -s bsp`, rename with `Prefix+$` |
+| Windows | `index name`; the active window is a solid mauve block; 󰊓 zoomed, 󰅶 new output in a background window (build finished), 󰂞 bell |
+| Git | Branch of the active pane — only shown inside a repository |
+| Directory | Directory of the active pane |
 | Load / RAM | 1-minute load average (compare with `nproc`) and used memory |
-| Host / time | Hostname (which machine you are on over SSH) and clock |
+| Host / time | Hostname (which machine you are on over SSH), clock and date |
 
-Each pane also shows its number, command and directory on its top border. Colours are Catppuccin Mocha, defined once as `@c_*` options at the top of the theme section. Icons need a Nerd Font; without one, put `set -g @df_plain 1` in `~/.tmux.local.conf`.
+### Pane labels — see what every pane is doing
+
+Each pane has a label on its top border: `number  icon action · target`. Split a window into three panes and you can tell at a glance which is which:
+
+```
+┌ 1  editing · main.c (~/bsp/drivers) ──┬ 2  watching logs · bsp ─────────────┐
+│  Vim: edit the driver                 │  journalctl -f / tail -f / dmesg    │
+│                                       ├ 3  serial console · bsp ────────────┤
+│                                       │  picocom: board boot log            │
+└───────────────────────────────────────┴─────────────────────────────────────┘
+```
+
+| Running | Label |
+|---|---|
+| `vim` `nvim` `nano` | **editing** · the file name |
+| `picocom` `minicom` `tio` | **serial console** |
+| `tail` `less` `journalctl` `lnav` `watch` | **watching logs** |
+| `make` `ninja` `cmake` `gcc` `bitbake` | **building** |
+| `ssh` `adb` `mosh` | the command name |
+| `htop` `top` | **monitoring** |
+| `python` `docker` `git` `claude` | python · container · git · claude |
+| `bash` `zsh` | **shell** · the directory |
+
+Anything else shows its command name. To add your own, edit `@df_pane_act` in `tmux/tmux.conf`. When you copy text, the status bar briefly shows **Copied to clipboard**.
+
+Each pane's label colours match its role, and the active pane's border is mauve. Colours are defined once as `@c_*` options at the top of the theme section — change them to re-theme everything. Icons need a [Nerd Font](https://www.nerdfonts.com); without one, put `set -g @df_plain 1` in `~/.tmux.local.conf`.
 
 ### Key Reference
 
@@ -298,13 +347,27 @@ Each pane also shows its number, command and directory on its top border. Colour
 | `Prefix+A` / `Prefix+B` | BSP layout / dual ADB layout |
 | `Prefix+L` | Toggle logging this pane to `~/tmux_logs/` |
 | `Prefix+K` | Clear scrollback |
-| `Prefix+[` / mouse wheel | Copy mode (`v` select, `y` copy to clipboard) |
-| Mouse drag | Select + copy inside one pane (never use Shift+drag — it selects across all panes) |
+| `Prefix+[` / mouse wheel | Copy mode — see [Copy and paste](#copy-and-paste) |
 | `Prefix+d` | Detach session (keeps running) |
 | `Prefix+s` | Choose session |
 | `Prefix+r` | Reload `~/.tmux.conf` |
 
-The clipboard works over SSH too (OSC 52). Inside tmux, `ssh` sends `TERM=xterm-256color` so BusyBox / Buildroot targets don't complain about an unknown terminal.
+### Copy and paste
+
+Copies go to the **desktop clipboard** through `~/.local/bin/dotforge-clip` (`wl-copy` on Wayland, `xclip` / `xsel` on X11). GNOME Terminal ignores the OSC 52 sequence tmux uses by default, so a real clipboard tool is needed — on Wayland: `sudo apt install wl-clipboard`.
+
+| Do this | To get this |
+|---|---|
+| **Drag** inside a pane | Select text in that pane only; copied on release, stays highlighted |
+| **Double / triple click** | Select and copy a word / a line |
+| `Prefix+[` → `v` → move → `y` | Keyboard copy (`Enter` also works) |
+| `q` / `Esc` | Leave copy mode |
+| `Prefix+]` | Paste inside tmux (works even without a clipboard tool) |
+| `Ctrl+Shift+V` or `Prefix+P` | Paste the desktop clipboard |
+
+> Don't hold **Shift** while dragging: that bypasses tmux and selects across every pane. Programs that grab the mouse (`htop`, Vim) get the drag instead of tmux.
+
+The clipboard also works over SSH in terminals that support OSC 52 (kitty, Alacritty, WezTerm, iTerm2). Inside tmux, `ssh` sends `TERM=xterm-256color` so BusyBox / Buildroot targets don't complain about an unknown terminal.
 
 ---
 
@@ -316,7 +379,7 @@ The clipboard works over SSH too (OSC 52). Inside tmux, `ssh` sends `TERM=xterm-
 user@host:~/linux (main) [arm64] ✗2 $
 ```
 
-Git branch, the active cross-compile `ARCH` (so you never build for the wrong target), the exit code of the last command when it failed, and a green / red `$`.
+Git branch (shown safely — a branch named `$(cmd)` is never executed), the active cross-compile `ARCH` (so you never build for the wrong target), the exit code of the last command when it failed, and a green / red `$`.
 
 ### Aliases — Highlights
 
@@ -430,6 +493,7 @@ Author name and e-mail come from `git config user.name` / `user.email`.
 
 ```
 dotforge/
+├── assets/                     screenshots used in this README
 ├── docker/
 │   └── docker.sh               detect distro + install Docker Engine
 ├── docs/
@@ -443,7 +507,8 @@ dotforge/
 │   ├── bash_functions          shell functions (xc, con, mkidx, kccdb...)
 │   └── bashrc_append           prompt, history, integrations; loads the rest
 ├── tmux/
-│   └── tmux.conf               tmux config for embedded workflows
+│   ├── tmux.conf               tmux config for embedded workflows
+│   └── clip.sh                 copy-to-clipboard helper (→ ~/.local/bin/dotforge-clip)
 ├── vim/
 │   ├── vimrc                   core Vim configuration
 │   ├── plugin_config.vim       plugin list + all plugin configuration
