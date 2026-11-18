@@ -23,17 +23,51 @@
 #  Functions do all of this. Any alias that takes an argument or sets
 #  environment variables belongs here, not in bash_aliases.
 #
+#  Every function prints its usage when run with -h.
+#
 #  TABLE OF CONTENTS
 #  -----------------
 #  [1]  Cross-Compilation     — xc, xc-show, xc-clear
-#  [2]  ADB                   — adbpush, adbpull
-#  [3]  Kernel / BSP          — kgrep, modcheck, dlog, rmmod_insmod
-#  [4]  Workspace             — mkcd, up, fcd, vf
-#  [5]  Git Helpers           — gsync, glog, gbclean
-#  [6]  System Info           — sysinfo, portinfo, cpuload
-#  [7]  Network               — myip, portscan
+#  [2]  Serial Console        — con, lsserial
+#  [3]  ADB                   — adbpush, adbpull
+#  [4]  Kernel / BSP          — kgrep, modcheck, dlog, rmmod_insmod,
+#                               mkl, mkcs, mktags, mkidx, kccdb, kcheck, dtsdump
+#  [5]  Workspace             — mkcd, up, fcd, vf, ff, va, extract
+#  [6]  Git Helpers           — gsync, glog
+#  [7]  System Info           — sysinfo, portinfo, cpuload
+#  [8]  Network               — myip, portscan
 #
 # ============================================================================
+
+
+# Small internal helpers (prefixed _df_ so they don't clash with your names).
+_df_err()  { printf '\e[0;31m%s\e[0m\n' "$*" >&2; }
+_df_warn() { printf '\e[0;33m%s\e[0m\n' "$*" >&2; }
+_df_ok()   { printf '\e[0;32m%s\e[0m\n' "$*"; }
+
+# Find a file or directory by walking up from $PWD. Prints the directory.
+#   _df_find_up MAINTAINERS   → /home/me/linux
+_df_find_up() {
+    local dir="$PWD"
+    while :; do
+        [ -e "$dir/$1" ] && { printf '%s\n' "$dir"; return 0; }
+        [ "$dir" = "/" ] || [ -z "$dir" ] && return 1
+        dir="$(dirname "$dir")"
+    done
+}
+
+# Root of a Linux / U-Boot style tree (has Kbuild + MAINTAINERS), or fail.
+_df_kernel_root() {
+    local dir="$PWD"
+    while [ "$dir" != "/" ] && [ -n "$dir" ]; do
+        if [ -f "$dir/Kbuild" ] && [ -f "$dir/MAINTAINERS" ]; then
+            printf '%s\n' "$dir"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+    return 1
+}
 
 
 # ============================================================================
@@ -41,67 +75,212 @@
 # ============================================================================
 
 # Set the cross-compilation toolchain for a target architecture.
+#   xc arm64                       → ARCH=arm64  CROSS_COMPILE=aarch64-linux-gnu-
+#   xc arm64 aarch64-none-linux-gnu
+#   xc arm   arm-linux-gnueabihf
+#   xc riscv riscv64-linux-gnu
+#   xc arm64 llvm                  → ARCH=arm64  LLVM=1 (clang, no CROSS_COMPILE)
+#
+# Prefer a per-tree .envrc with direnv over setting this in ~/.bash_local:
+# an exported ARCH also affects native builds (host tools, DKMS, other repos).
 xc() {
-    if [ -z "$1" ] || [ -z "$2" ]; then
-        echo "Usage: xc <ARCH> <CROSS_COMPILE_PREFIX>"
+    if [ -z "$1" ] || [ "$1" = "-h" ]; then
+        echo "Usage: xc <ARCH> [CROSS_COMPILE_PREFIX | llvm]"
         echo ""
         echo "  Examples:"
-        echo "    xc arm64  aarch64-linux-gnu"
+        echo "    xc arm64                    (default prefix aarch64-linux-gnu-)"
         echo "    xc arm    arm-linux-gnueabihf"
         echo "    xc riscv  riscv64-linux-gnu"
+        echo "    xc arm64  llvm              (clang: LLVM=1)"
         echo ""
-        echo "  Current: ARCH=${ARCH:-unset}  CROSS_COMPILE=${CROSS_COMPILE:-unset}"
+        echo "  Current: ARCH=${ARCH:-unset}  CROSS_COMPILE=${CROSS_COMPILE:-unset}  LLVM=${LLVM:-unset}"
         return 1
     fi
-    export ARCH="$1"
-    local prefix="${2%-}"
-    export CROSS_COMPILE="${prefix}-"
-    echo "Toolchain set:"
-    echo "  ARCH          = $ARCH"
-    echo "  CROSS_COMPILE = $CROSS_COMPILE"
+
+    # Kernel ARCH names differ from GNU triplets — fix the common mix-ups.
+    local arch="$1"
+    case "$arch" in
+        aarch64)        arch=arm64 ;;
+        armhf|armv7*)   arch=arm ;;
+        x86_64|amd64|i?86) arch=x86 ;;
+        riscv64|riscv32) arch=riscv ;;
+    esac
+    [ "$arch" != "$1" ] && _df_warn "Note: kernel ARCH for '$1' is '$arch'"
+
+    local prefix="${2:-}"
+    if [ -z "$prefix" ]; then
+        case "$arch" in
+            arm64) prefix=aarch64-linux-gnu ;;
+            arm)   prefix=arm-linux-gnueabihf ;;
+            riscv) prefix=riscv64-linux-gnu ;;
+            x86)   prefix="" ;;
+            *)     _df_err "No default prefix for ARCH=$arch — pass one."; return 1 ;;
+        esac
+    fi
+
+    export ARCH="$arch"
+    if [ "$prefix" = "llvm" ]; then
+        unset CROSS_COMPILE
+        export LLVM=1
+        command -v clang &>/dev/null || _df_warn "Warning: clang not found in PATH"
+    elif [ -n "$prefix" ]; then
+        unset LLVM
+        export CROSS_COMPILE="${prefix%-}-"
+        if ! command -v "${CROSS_COMPILE}gcc" &>/dev/null; then
+            _df_warn "Warning: ${CROSS_COMPILE}gcc not found in PATH — install the toolchain or fix PATH"
+        fi
+    else
+        unset CROSS_COMPILE LLVM
+    fi
+    xc-show
 }
 
 # Show the currently active cross-compilation toolchain.
 xc-show() {
-    if [ -z "$ARCH" ] && [ -z "$CROSS_COMPILE" ]; then
+    if [ -z "$ARCH" ] && [ -z "$CROSS_COMPILE" ] && [ -z "$LLVM" ]; then
         echo "No cross-compile toolchain set (native build)"
-    else
-        echo "ARCH          = ${ARCH:-unset}"
-        echo "CROSS_COMPILE = ${CROSS_COMPILE:-unset}"
+        return 0
+    fi
+    echo "ARCH          = ${ARCH:-unset}"
+    echo "CROSS_COMPILE = ${CROSS_COMPILE:-unset}"
+    [ -n "$LLVM" ] && echo "LLVM          = $LLVM"
+    if [ -n "$CROSS_COMPILE" ] && command -v "${CROSS_COMPILE}gcc" &>/dev/null; then
+        echo "Compiler      = $("${CROSS_COMPILE}gcc" --version | head -1)"
+        echo "              ( $(command -v "${CROSS_COMPILE}gcc") )"
     fi
 }
 
 # Clear the cross-compilation environment (return to native build).
 xc-clear() {
-    unset ARCH CROSS_COMPILE
+    unset ARCH CROSS_COMPILE LLVM
     echo "Cross-compile env cleared — now building natively"
 }
 
 
 # ============================================================================
-# [2]  ADB — ANDROID DEBUG BRIDGE
+# [2]  SERIAL CONSOLE
 # ============================================================================
 
-# Push a file to the ADB device and set executable permissions.
+# Open a serial console with picocom.
+#   con                    → first USB serial port, 115200
+#   con 1                  → /dev/ttyUSB1
+#   con /dev/ttyACM0 1500000      (Rockchip default baud)
+#   con usb-FTDI_FT232R_...       (name from /dev/serial/by-id — stable)
+#   con -l                 → also log to ~/serial_logs/<date>.log
+# Exit picocom with Ctrl+A Ctrl+X.
+con() {
+    local dev="" baud="115200" log=0 arg
+    for arg in "$@"; do
+        case "$arg" in
+            -h|--help)
+                echo "Usage: con [device|index|by-id-name] [baud] [-l]"
+                echo "  -l   log the session to ~/serial_logs/"
+                echo "  Exit: Ctrl+A Ctrl+X     List ports: lsserial"
+                return 0 ;;
+            -l|--log) log=1 ;;
+            [0-9]|[0-9][0-9]) dev="/dev/ttyUSB$arg" ;;
+            [0-9][0-9][0-9]*) baud="$arg" ;;
+            /dev/*) dev="$arg" ;;
+            *) dev="/dev/serial/by-id/$arg" ;;
+        esac
+    done
+
+    # Default: the first USB serial adapter that exists.
+    if [ -z "$dev" ]; then
+        local d
+        for d in /dev/ttyUSB* /dev/ttyACM*; do
+            [ -e "$d" ] && { dev="$d"; break; }
+        done
+    fi
+    if [ -z "$dev" ] || [ ! -e "$dev" ]; then
+        _df_err "No serial device ${dev:-found}. Plugged in? Try: lsserial"
+        return 1
+    fi
+    if [ ! -r "$dev" ] || [ ! -w "$dev" ]; then
+        _df_err "No permission for $dev."
+        echo "  Fix once: sudo usermod -aG dialout $USER   (then log out and back in)"
+        return 1
+    fi
+    if ! command -v picocom &>/dev/null; then
+        _df_err "picocom not installed: sudo apt install picocom"
+        return 1
+    fi
+
+    local opts=(-b "$baud" --flow=none --quiet)
+    if [ "$log" = 1 ]; then
+        mkdir -p "$HOME/serial_logs"
+        local logfile
+        logfile="$HOME/serial_logs/$(basename "$dev")_$(date +%Y-%m-%d_%H-%M-%S).log"
+        opts+=(--logfile "$logfile")
+        echo "Logging to $logfile"
+    fi
+    echo "Connecting to $dev @ $baud  (exit: Ctrl+A Ctrl+X)"
+    picocom "${opts[@]}" "$dev"
+}
+
+# List serial ports with their USB adapter type and stable by-id name.
+lsserial() {
+    local found=0 dev name drv byid link
+    for dev in /dev/ttyUSB* /dev/ttyACM* /dev/ttyAMA* /dev/ttymxc* /dev/ttyS[0-9]*; do
+        [ -e "$dev" ] || continue
+        name="$(basename "$dev")"
+        # Skip the dozens of legacy /dev/ttyS* with no real UART behind them.
+        if [[ "$name" == ttyS* ]] && [ ! -e "/sys/class/tty/$name/device/driver" ]; then
+            continue
+        fi
+        case "$name" in ttyS*) [ "$(cat "/sys/class/tty/$name/type" 2>/dev/null)" = 0 ] && continue ;; esac
+        drv="$(basename "$(readlink -f "/sys/class/tty/$name/device/driver" 2>/dev/null)" 2>/dev/null)"
+        byid=""
+        for link in /dev/serial/by-id/*; do
+            [ "$(readlink -f "$link" 2>/dev/null)" = "$dev" ] && byid="$(basename "$link")"
+        done
+        printf '%-14s %-12s %s\n' "$dev" "${drv:-?}" "$byid"
+        found=1
+    done
+    [ "$found" = 0 ] && echo "No serial ports found."
+    if ! id -nG | grep -qw dialout; then
+        _df_warn "You are not in the 'dialout' group: sudo usermod -aG dialout $USER"
+    fi
+}
+
+
+# ============================================================================
+# [3]  ADB — ANDROID DEBUG BRIDGE
+# ============================================================================
+# Multiple devices? export ANDROID_SERIAL=<serial from 'adb devices'>
+
+# Push a file to the device; make it executable if it is executable locally.
+#   adbpush ./my_test /data/local/tmp/          (into a directory)
+#   adbpush ./my_test /data/local/tmp/my_test2  (to a full path)
 adbpush() {
-    if [ -z "$1" ] || [ -z "$2" ]; then
-        echo "Usage: adbpush <local_file> <remote_path>"
-        echo "  e.g. adbpush ./my_driver /data/local/tmp/"
+    if [ -z "$1" ] || [ -z "$2" ] || [ "$1" = "-h" ]; then
+        echo "Usage: adbpush <local_file> <remote_dir/ | remote_path>"
+        echo "  e.g. adbpush ./my_test /data/local/tmp/"
         return 1
     fi
     if [ ! -f "$1" ]; then
-        echo "Error: '$1' does not exist or is not a file"
+        _df_err "Error: '$1' does not exist or is not a file"
         return 1
     fi
-    local filename
-    filename=$(basename "$1")
-    adb push "$1" "$2" && adb shell chmod +x "$2/$filename"
-    echo "Pushed and chmod +x: $2/$filename"
+    local src="$1" dst="$2" target
+    # Is the destination a directory on the device?
+    if [[ "$dst" == */ ]] || adb shell "[ -d '$dst' ]" 2>/dev/null; then
+        target="${dst%/}/$(basename "$src")"
+    else
+        target="$dst"
+    fi
+    adb push "$src" "$target" || return 1
+    if [ -x "$src" ]; then
+        adb shell chmod 755 "'$target'" || return 1
+        echo "Pushed (+x): $target"
+    else
+        echo "Pushed: $target"
+    fi
 }
 
 # Pull a file from the ADB device to the current directory.
 adbpull() {
-    if [ -z "$1" ]; then
+    if [ -z "$1" ] || [ "$1" = "-h" ]; then
         echo "Usage: adbpull <remote_file> [local_destination]"
         echo "  e.g. adbpull /data/local/tmp/output.log"
         echo "  e.g. adbpull /data/local/tmp/output.log ~/logs/"
@@ -113,100 +292,247 @@ adbpull() {
 
 
 # ============================================================================
-# [3]  KERNEL / BSP HELPERS
+# [4]  KERNEL / BSP HELPERS
 # ============================================================================
 
-# Search for a kernel config option by name in .config.
+# Search for a kernel config option.
+#   kgrep USB_SERIAL       → nearest .config (honours $KBUILD_OUTPUT / O=)
+#   kgrep -r USB_SERIAL    → the RUNNING kernel (/proc/config.gz or /boot)
 kgrep() {
-    if [ -z "$1" ]; then
-        echo "Usage: kgrep <CONFIG_OPTION>"
-        echo "  e.g. kgrep USB_SERIAL"
+    if [ -z "$1" ] || [ "$1" = "-h" ]; then
+        echo "Usage: kgrep [-r] <CONFIG_OPTION>"
+        echo "  e.g. kgrep USB_SERIAL       (build tree .config)"
+        echo "       kgrep -r USB_SERIAL    (running kernel)"
         return 1
     fi
-    # Search upward for .config starting from current dir
-    local dir="$PWD"
-    local config=""
-    while [ "$dir" != "/" ]; do
-        if [ -f "$dir/.config" ]; then
-            config="$dir/.config"
-            break
+    if [ "$1" = "-r" ]; then
+        shift
+        local pattern="${1#CONFIG_}"
+        if [ -r /proc/config.gz ]; then
+            echo "Searching: /proc/config.gz"
+            zgrep -i "CONFIG_[A-Z0-9_]*${pattern}" /proc/config.gz || echo "No match for '$1'"
+        elif [ -r "/boot/config-$(uname -r)" ]; then
+            echo "Searching: /boot/config-$(uname -r)"
+            grep -i "CONFIG_[A-Z0-9_]*${pattern}" "/boot/config-$(uname -r)" || echo "No match for '$1'"
+        else
+            _df_err "No config for the running kernel (enable CONFIG_IKCONFIG_PROC)"
+            return 1
         fi
-        dir=$(dirname "$dir")
-    done
+        return 0
+    fi
+
+    local config=""
+    if [ -n "$KBUILD_OUTPUT" ] && [ -f "$KBUILD_OUTPUT/.config" ]; then
+        config="$KBUILD_OUTPUT/.config"
+    else
+        local dir
+        dir=$(_df_find_up .config) && config="$dir/.config"
+    fi
     if [ -z "$config" ]; then
-        echo "No .config found in any parent directories"
+        _df_err "No .config found here or in parent dirs (set KBUILD_OUTPUT for O= builds)"
         return 1
     fi
     echo "Searching: $config"
-    grep -i "$1" "$config" || echo "No match for '$1'"
+    grep -i "CONFIG_[A-Z0-9_]*${1#CONFIG_}" "$config" || echo "No match for '$1'"
 }
 
-# Check if a kernel module is currently loaded.
+# Is a kernel module loaded — or built into the running kernel?
 modcheck() {
-    if [ -z "$1" ]; then
+    if [ -z "$1" ] || [ "$1" = "-h" ]; then
         echo "Usage: modcheck <module_name>"
         echo "  e.g. modcheck i2c_dev"
         return 1
     fi
-    # Normalize dashes to underscores for searching
-    local query="${1//-/_}"
-    local matched_mod
-    matched_mod=$(lsmod | sed 's/-/_/g' | grep -i "^${query}\b" | awk '{print $1}')
-    if [ -n "$matched_mod" ]; then
-        echo "LOADED:   $1 (as $matched_mod)"
-        lsmod | grep -i "^${matched_mod}\b"
+    # The kernel always reports module names with underscores.
+    local name="${1%.ko}"
+    name="${name##*/}"
+    name="${name//-/_}"
+    if grep -q "^${name} " /proc/modules 2>/dev/null; then
+        echo "LOADED:     $name"
+        grep "^${name} " /proc/modules | awk '{printf "  size=%s  refcount=%s  used_by=%s\n", $2, $3, $4}'
+    elif grep -qE "/${name//_/[-_]}\.ko" "/lib/modules/$(uname -r)/modules.builtin" 2>/dev/null; then
+        echo "BUILT-IN:   $name (compiled into the kernel, =y)"
     else
-        echo "NOT LOADED: $1"
+        echo "NOT LOADED: $name"
+        modinfo "$name" &>/dev/null && echo "  (available: sudo modprobe $name)"
+        return 1
     fi
 }
 
-# Show dmesg output filtered by a keyword.
+# Show dmesg output filtered by a keyword (case-insensitive regex).
+#   dlog i2c          → matching lines so far
+#   dlog -f usb       → follow new matching lines live
 dlog() {
-    if [ -z "$1" ]; then
-        echo "Usage: dlog <keyword>"
-        echo "  e.g. dlog i2c"
-        echo "  e.g. dlog error"
+    if [ -z "$1" ] || [ "$1" = "-h" ]; then
+        echo "Usage: dlog [-f] <keyword>"
+        echo "  e.g. dlog i2c      dlog -f 'usb|xhci'"
         return 1
     fi
-    sudo dmesg -T | grep -i "$1"
+    if [ "$1" = "-f" ]; then
+        shift
+        sudo dmesg -w | grep --line-buffered -iE --color=auto "$1"
+    else
+        sudo dmesg | grep -iE --color=auto "$1"
+    fi
 }
 
-# Unload and reload a kernel module in one command.
+# Reload a kernel module from a .ko file, passing module parameters through.
+#   rmmod_insmod my_driver                   (./my_driver.ko)
+#   rmmod_insmod out/my-driver.ko debug=1
 rmmod_insmod() {
-    if [ -z "$1" ]; then
-        echo "Usage: rmmod_insmod <module_name>"
-        echo "  e.g. rmmod_insmod my_driver"
+    if [ -z "$1" ] || [ "$1" = "-h" ]; then
+        echo "Usage: rmmod_insmod <module[.ko] | path/to/module.ko> [param=value ...]"
+        echo "  e.g. rmmod_insmod my_driver debug=1"
         return 1
     fi
-    local mod="$1"
-    # Remove .ko extension if provided
-    mod="${mod%.ko}"
-    # Normalize dashes/underscores for module check
-    local query="${mod//-/_}"
-
-    local matched_mod
-    matched_mod=$(lsmod | sed 's/-/_/g' | grep -i "^${query}\b" | awk '{print $1}')
-
-    if [ -n "$matched_mod" ]; then
-        # Use the name found in lsmod to rmmod
-        sudo rmmod "$matched_mod" && echo "Removed: $matched_mod" || return 1
-    else
-        echo "Note: $mod was not loaded, skipping rmmod"
+    local ko="$1"; shift
+    [[ "$ko" != *.ko ]] && ko="${ko}.ko"
+    # Accept both my-driver.ko and my_driver.ko spellings.
+    if [ ! -f "$ko" ] && [ -f "${ko//-/_}" ]; then
+        ko="${ko//-/_}"
+    elif [ ! -f "$ko" ] && [ -f "${ko//_/-}" ]; then
+        ko="${ko//_/-}"
+    fi
+    # Check the file BEFORE unloading — a typo must not leave you with no driver.
+    if [ ! -f "$ko" ]; then
+        _df_err "Error: $ko not found"
+        return 1
     fi
 
-    if [ -f "${mod}.ko" ]; then
-        sudo insmod "${mod}.ko" && echo "Loaded:  ${mod}.ko"
-    elif [ -f "${mod//-/_}.ko" ]; then
-        sudo insmod "${mod//-/_}.ko" && echo "Loaded:  ${mod//-/_}.ko"
+    # Real module name from the .ko (it can differ from the file name).
+    local name
+    name=$(modinfo -F name "$ko" 2>/dev/null)
+    [ -z "$name" ] && { name="$(basename "$ko" .ko)"; name="${name//-/_}"; }
+
+    if grep -q "^${name} " /proc/modules; then
+        sudo rmmod "$name" || { _df_err "rmmod $name failed (in use? check: lsmod | grep $name)"; return 1; }
+        echo "Removed: $name"
     else
-        echo "Error: ${mod}.ko not found in current directory"
+        echo "Note: $name was not loaded, skipping rmmod"
+    fi
+
+    if sudo insmod "$ko" "$@"; then
+        _df_ok "Loaded:  $ko $*"
+    else
+        _df_err "insmod failed — kernel log:"
+    fi
+    sudo dmesg | tail -n 10
+}
+
+# Run make and keep a log in build.log (exit status of make is preserved).
+#   mkl                  mkl -C linux O=out Image dtbs
+#   buildlogerr          → errors/warnings from the last run
+mkl() {
+    echo "### $(date '+%F %T')  make -j$(nproc) $*  ARCH=${ARCH:-} CROSS_COMPILE=${CROSS_COMPILE:-}" > build.log
+    command make -j"$(nproc)" "$@" 2>&1 | tee -a build.log
+    local rc=${PIPESTATUS[0]}
+    if [ "$rc" -eq 0 ]; then
+        _df_ok "Build OK  (log: build.log)"
+    else
+        _df_err "Build FAILED ($rc). First errors:"
+        grep -nE "error:|Error [0-9]|undefined reference" build.log | head -10
+    fi
+    return "$rc"
+}
+
+# Build cscope / ctags indexes.
+# In a kernel or U-Boot tree this uses the kernel's own target, which indexes
+# only the current $ARCH (no 20x duplicate definitions from other arch/ dirs)
+# and includes assembly (.S) and Kconfig.
+mkcs() {
+    local kroot
+    if kroot=$(_df_kernel_root); then
+        echo "Kernel tree: $kroot  (ARCH=${ARCH:-host})"
+        command make -C "$kroot" -s cscope ${ARCH:+ARCH=$ARCH} && echo "cscope index rebuilt"
+        return
+    fi
+    find . \( -name .git -o -name build -o -name out -o -name node_modules \) -prune \
+        -o -type f \( -name '*.[chsS]' -o -name '*.cpp' -o -name '*.hpp' -o -name '*.cc' \) -print \
+        > cscope.files
+    cscope -b -q -k -i cscope.files && echo "cscope index rebuilt ($(wc -l < cscope.files) files)"
+}
+
+mktags() {
+    local kroot
+    if kroot=$(_df_kernel_root); then
+        command make -C "$kroot" -s tags ${ARCH:+ARCH=$ARCH} && echo "ctags index rebuilt"
+        return
+    fi
+    ctags -R --exclude=.git --exclude=build --exclude=out --exclude='*.o' --exclude='*.ko' . \
+        && echo "ctags index rebuilt"
+}
+
+# Rebuild both. In Vim run :CscopeReload afterwards.
+mkidx() { mkcs && mktags; }
+
+# Generate compile_commands.json for clangd (go-to-definition in Vim).
+#   Kernel / U-Boot: needs a build first (uses the .cmd files it leaves).
+#   Anything else:   wraps the build with 'bear'.
+#   kccdb                 kccdb O=out        kccdb -- make -C app
+kccdb() {
+    local kroot
+    if kroot=$(_df_kernel_root); then
+        if [ -f "$kroot/scripts/clang-tools/gen_compile_commands.py" ]; then
+            local outdir="${KBUILD_OUTPUT:-$kroot}"
+            local a
+            for a in "$@"; do [[ "$a" == O=* ]] && outdir="${a#O=}"; done
+            python3 "$kroot/scripts/clang-tools/gen_compile_commands.py" -d "$outdir" \
+                -o "$kroot/compile_commands.json" \
+                && echo "Wrote $kroot/compile_commands.json"
+            return
+        fi
+    fi
+    if ! command -v bear &>/dev/null; then
+        _df_err "bear not installed: sudo apt install bear"
+        return 1
+    fi
+    [ "$1" = "--" ] && shift
+    if [ $# -gt 0 ]; then bear -- "$@"; else bear -- make -j"$(nproc)"; fi
+}
+
+# Run the kernel's checkpatch.pl.
+#   kcheck                 → the last commit (HEAD)
+#   kcheck HEAD~3          → the last 3 commits, one by one
+#   kcheck drivers/foo.c   → a file
+#   kcheck 0001-*.patch    → patch files
+kcheck() {
+    local kroot
+    kroot=$(_df_kernel_root) || { _df_err "Not inside a kernel/U-Boot tree"; return 1; }
+    local cp="$kroot/scripts/checkpatch.pl"
+    [ -x "$cp" ] || { _df_err "$cp not found"; return 1; }
+    if [ $# -eq 0 ]; then
+        "$cp" --strict -g HEAD
+    elif [ -f "$1" ] && [[ "$1" == *.patch ]]; then
+        "$cp" --strict "$@"
+    elif [ -f "$1" ]; then
+        "$cp" --strict --no-tree -f "$@"
+    else
+        "$cp" --strict -g "$1..HEAD"
+    fi
+}
+
+# Decompile a device tree blob back to source — check what the board really got.
+#   dtsdump board.dtb          → board.dtb as DTS on stdout
+#   dtsdump                    → the RUNNING device tree (/sys/firmware/devicetree)
+dtsdump() {
+    if [ "$1" = "-h" ]; then
+        echo "Usage: dtsdump [file.dtb|file.dtbo]   (no arg = live tree on this board)"
+        return 0
+    fi
+    command -v dtc &>/dev/null || { _df_err "dtc not installed: sudo apt install device-tree-compiler"; return 1; }
+    if [ -n "$1" ]; then
+        dtc -q -I dtb -O dts -s "$1"
+    elif [ -d /sys/firmware/devicetree/base ]; then
+        dtc -q -I fs -O dts -s /sys/firmware/devicetree/base
+    else
+        _df_err "No live device tree here (x86/ACPI host?). Pass a .dtb file."
         return 1
     fi
 }
 
 
 # ============================================================================
-# [4]  WORKSPACE HELPERS
+# [5]  WORKSPACE HELPERS
 # ============================================================================
 
 # Create a directory and immediately cd into it.
@@ -215,58 +541,84 @@ mkcd() {
         echo "Usage: mkcd <directory_name>"
         return 1
     fi
-    mkdir -p "$1" && cd "$1" || return 1
+    mkdir -p -- "$1" && cd -- "$1" || return 1
 }
 
-# Move up N directory levels.
+# Move up N directory levels.  up  /  up 3
 up() {
     local levels="${1:-1}"
-    local path=""
-    for _ in $(seq 1 "$levels"); do
-        path="../$path"
-    done
-    cd "$path" || return 1
+    if ! [[ "$levels" =~ ^[0-9]+$ ]]; then
+        echo "Usage: up [N]"
+        return 1
+    fi
+    local p="" i
+    for ((i = 0; i < levels; i++)); do p+="../"; done
+    cd "${p:-.}" || return 1
 }
 
 # Fuzzy-search directories and cd into the selected one.
 fcd() {
     local target
-    target=$(find . -type d -not -path '*/\.*' -not -path '*/build*' \
-        2>/dev/null | fzf --preview 'ls {}') && cd "$target" || return 1
+    target=$(find . \( -name .git -o -name node_modules -o -name __pycache__ \) -prune \
+        -o -type d -print 2>/dev/null | fzf --preview 'ls -A {}') && cd "$target" || return 1
 }
 
 # Fuzzy-search files and open the selected one in Vim.
 vf() {
     local file
-    file=$(fzf --preview="bat --style=numbers --color=always {}" "$@") \
+    file=$(fzf --preview="bat --style=numbers --color=always {} 2>/dev/null || cat {}" "$@") \
         && vim "$file"
 }
 
-# Extract any archive format with one command.
+# fzf with syntax-highlighted preview; prints the chosen path.
+ff() {
+    fzf --preview="bat --style=numbers --color=always {} 2>/dev/null || cat {}" "$@"
+}
+
+# Activate ./venv or ./.venv (create one with: python3 -m venv .venv).
+va() {
+    local d
+    for d in .venv venv; do
+        if [ -f "$d/bin/activate" ]; then
+            source "$d/bin/activate"
+            return 0
+        fi
+    done
+    _df_err "No venv/ or .venv/ here. Create one: python3 -m venv .venv"
+    return 1
+}
+
+# Extract any archive format with one command. Keeps the original for
+# single-file compressors (handy for rootfs / sdcard images).
 extract() {
-    if [ -z "$1" ]; then
+    if [ -z "$1" ] || [ "$1" = "-h" ]; then
         echo "Usage: extract <archive_file>"
         return 1
     fi
     if [ ! -f "$1" ]; then
-        echo "Error: '$1' is not a file"
+        _df_err "Error: '$1' is not a file"
         return 1
     fi
     case "$1" in
-        *.tar.bz2)  tar xjf "$1"     ;;
-        *.tar.gz)   tar xzf "$1"     ;;
-        *.tar.xz)   tar xJf "$1"     ;;
-        *.tar.zst)  tar --zstd -xf "$1" ;;
-        *.bz2)      bunzip2 "$1"     ;;
-        *.gz)       gunzip "$1"      ;;
-        *.zip)      unzip "$1"       ;;
-        *.7z)       7z x "$1"        ;;
-        *.xz)       unxz "$1"        ;;
-        *.rar)      unrar x "$1"     ;;
-        *.tar)      tar xf "$1"      ;;
+        *.tar.bz2|*.tbz2) tar xjf "$1"              ;;
+        *.tar.gz|*.tgz)   tar xzf "$1"              ;;
+        *.tar.xz|*.txz)   tar xJf "$1"              ;;
+        *.tar.zst)        tar --zstd -xf "$1"       ;;
+        *.tar.lz4)        lz4 -dc "$1" | tar xf -   ;;
+        *.tar)            tar xf "$1"               ;;
+        *.cpio.gz)        gunzip -c "$1" | cpio -idmv ;;
+        *.bz2)            bunzip2 -k "$1"           ;;
+        *.gz)             gunzip -k "$1"            ;;
+        *.xz)             unxz -k "$1"              ;;
+        *.zst)            zstd -dk "$1"             ;;
+        *.lz4)            lz4 -d "$1"               ;;
+        *.zip)            unzip "$1"                ;;
+        *.7z)             7z x "$1"                 ;;
+        *.rar)            unrar x "$1"              ;;
+        *.cpio)           cpio -idmv < "$1"         ;;
         *)
-            echo "Unknown format: '$1'"
-            echo "Supported: tar.gz tar.bz2 tar.xz tar.zst bz2 gz zip 7z xz rar tar"
+            _df_err "Unknown format: '$1'"
+            echo "Supported: tar(.gz/.bz2/.xz/.zst/.lz4) gz bz2 xz zst lz4 zip 7z rar cpio"
             return 1
             ;;
     esac
@@ -274,61 +626,72 @@ extract() {
 
 
 # ============================================================================
-# [5]  GIT HELPERS
+# [6]  GIT HELPERS
 # ============================================================================
 
-# Sync the current branch — fetch + rebase in one step.
+# Sync the current branch with its upstream — fetch + rebase, keeping any
+# uncommitted work (autostash). Works with any remote, not just 'origin'.
 gsync() {
-    local branch
-    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-    if [ -z "$branch" ]; then
-        echo "Error: not inside a git repository"
+    git rev-parse --git-dir &>/dev/null || { _df_err "Error: not inside a git repository"; return 1; }
+    local upstream
+    upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null) || {
+        _df_err "Branch has no upstream. Set one: git branch -u origin/<branch>"
         return 1
-    fi
-    echo "Syncing branch: $branch"
-    git fetch origin && git rebase "origin/$branch"
+    }
+    echo "Syncing $(git branch --show-current) onto $upstream"
+    git fetch "${upstream%%/*}" && git rebase --autostash "$upstream"
 }
 
 # Pretty one-line git log with graph, date, and author.
 glog() {
-    git log --oneline --graph --decorate \
-        --format="%C(yellow)%h%C(reset) %C(blue)%ad%C(reset) %C(green)%an%C(reset) %s" \
+    git log --graph --decorate \
+        --format="%C(yellow)%h%C(reset) %C(blue)%ad%C(reset) %C(green)%an%C(reset)%C(auto)%d%C(reset) %s" \
         --date=short "$@"
 }
 
 
-
 # ============================================================================
-# [6]  SYSTEM INFO
+# [7]  SYSTEM INFO
 # ============================================================================
 
-# Print a quick system summary. Usage: sysinfo
+# Print a quick system summary — works on x86 hosts and ARM boards.
 sysinfo() {
+    local model cores sockets
+    model=$(LC_ALL=C lscpu 2>/dev/null | awk -F: '/^Model name/ {sub(/^ +/, "", $2); print $2; exit}')
+    cores=$(LC_ALL=C lscpu -p=core,socket 2>/dev/null | grep -v '^#' | sort -u | wc -l)
     echo "================================================"
     echo " System Information"
     echo "================================================"
-    echo " OS       : $(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"')"
+    echo " OS       : $(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-unknown}")"
+    if [ -r /proc/device-tree/model ]; then
+        echo " Board    : $(tr -d '\0' < /proc/device-tree/model)"
+    fi
     echo " Kernel   : $(uname -r)"
     echo " Arch     : $(uname -m)"
     echo " Hostname : $(hostname)"
-    echo " CPU      : $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | sed 's/^ //')"
-    echo " Cores    : $(nproc) logical / $(grep -c '^processor' /proc/cpuinfo) physical"
-    echo " RAM      : $(free -h | awk '/^Mem:/ {print $3 " used / " $2 " total"}')"
-    echo " Disk     : $(df -h / | awk 'NR==2 {print $3 " used / " $2 " total (" $5 " full)"}')"
+    echo " CPU      : ${model:-unknown}"
+    echo " Cores    : ${cores:-?} physical / $(nproc --all) logical"
+    echo " RAM      : $(command free -h | awk '/^Mem:/ {print $3 " used / " $2 " total"}')"
+    echo " Disk     : $(command df -h / | awk 'NR==2 {print $3 " used / " $2 " total (" $5 " full)"}')"
+    if [ -n "$ARCH$CROSS_COMPILE$LLVM" ]; then
+        echo " Target   : ARCH=${ARCH:-} CROSS_COMPILE=${CROSS_COMPILE:-} ${LLVM:+LLVM=$LLVM}"
+    fi
     echo "================================================"
 }
 
-# Show which process is using a given port.  Usage: portinfo <port_number>
+# Show which process is listening on a given port.  portinfo 8080
 portinfo() {
-    if [ -z "$1" ]; then
+    if [ -z "$1" ] || [ "$1" = "-h" ]; then
         echo "Usage: portinfo <port_number>"
         echo "  e.g. portinfo 8080"
         return 1
     fi
-    sudo ss -tulnp | grep ":$1" || echo "Nothing listening on port $1"
+    local out
+    out=$(sudo ss -tulnpH "sport = :$1")
+    if [ -n "$out" ]; then echo "$out"; else echo "Nothing listening on port $1"; fi
 }
 
-# WHAT: Show CPU load per core in real time.
+# Show CPU load per core.
 cpuload() {
     if command -v mpstat &>/dev/null; then
         mpstat -P ALL 1 3
@@ -341,30 +704,35 @@ cpuload() {
 
 
 # ============================================================================
-# [7]  NETWORK HELPERS
+# [8]  NETWORK HELPERS
 # ============================================================================
 
-# Show both the local and public IP addresses. Usage: myip 
+# Local IPs per interface (find the NIC on the board's subnet) + public IP.
 myip() {
     echo "Local IPs:"
-    ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' \
-        | grep -v "^127\." | sed 's/^/  /'
+    ip -4 -o addr show scope global 2>/dev/null | awk '{printf "  %-12s %s\n", $2, $4}'
     echo "Public IP:"
-    curl -s --max-time 3 https://ifconfig.me && echo || echo "  (no internet / timeout)"
+    local pub
+    if pub=$(curl -s --max-time 3 https://ifconfig.me) && [ -n "$pub" ]; then
+        echo "  $pub"
+    else
+        echo "  (no internet / timeout)"
+    fi
 }
 
-# Check if a remote host's port is open and reachable. Usage: portscan <host> <port>
+# Check if a remote host's TCP port is open.  portscan 192.168.1.100 22
 portscan() {
-    if [ -z "$1" ] || [ -z "$2" ]; then
+    if [ -z "$1" ] || [ -z "$2" ] || [ "$1" = "-h" ]; then
         echo "Usage: portscan <host> <port>"
         echo "  e.g. portscan 192.168.1.100 22"
         return 1
     fi
-    local host="$1"
-    local port="$2"
-    if timeout 3 bash -c "echo >/dev/tcp/$host/$port" 2>/dev/null; then
-        echo "OPEN:   $host:$port"
+    # Host/port are passed as arguments, never pasted into the command string.
+    # shellcheck disable=SC2016
+    if timeout 3 bash -c 'echo > "/dev/tcp/$1/$2"' _ "$1" "$2" 2>/dev/null; then
+        echo "OPEN:   $1:$2"
     else
-        echo "CLOSED: $host:$port"
+        echo "CLOSED: $1:$2"
+        return 1
     fi
 }

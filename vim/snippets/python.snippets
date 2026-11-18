@@ -52,13 +52,11 @@
 # Professional script header with shebang, encoding, and docstring
 snippet fhdr "Python script file header" b
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 ${1:script_name}.py — ${2:Brief description of what this script does}
 
-Author  : ${3:Abdul Sattar} <${4:abdul.linuxdev@gmail.com}>
+Author  : ${3:`!v trim(system('git config user.name'))`} <${4:`!v trim(system('git config user.email'))`}>
 Created : `!v strftime('%B %Y')`
-Repo    : https://github.com/A4sa/dotforge
 
 Usage:
     python3 ${1:script_name}.py ${5:[options]}
@@ -225,34 +223,55 @@ class SerialComm:
         )
         log.info("Connected: %s @ %d baud", port, baud)
 
-    def send(self, cmd: str, end: str = "\n") -> None:
-        """Send a command string to the target."""
-        data = (cmd + end).encode("utf-8")
-        self._ser.write(data)
+    def send(self, cmd: str, end: str = "\n", flush: bool = True) -> None:
+        """Send a command string to the target.
+
+        flush=True drops unread input first, so old boot log output can't
+        match the next read_until() prompt by accident.
+        """
+        if flush:
+            self._ser.reset_input_buffer()
+        self._ser.write((cmd + end).encode("utf-8"))
+        self._ser.flush()
         log.debug("TX: %r", cmd)
 
     def read_until(self, prompt: str, timeout: float = 10.0) -> str:
-        """Read lines until the expected prompt string appears."""
-        output = []
+        """Read until 'prompt' appears (it need not end with a newline —
+        shell prompts like '# ' never do). Raises TimeoutError."""
+        buf = b""
+        want = prompt.encode("utf-8")
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            line = self._ser.readline().decode("utf-8", errors="replace")
-            if line:
-                output.append(line.rstrip())
-                log.debug("RX: %s", line.rstrip())
-                if prompt in line:
-                    break
-        return "\n".join(output)
+            chunk = self._ser.read(self._ser.in_waiting or 1)
+            if chunk:
+                buf += chunk
+                if want in buf:
+                    text = buf.decode("utf-8", errors="replace")
+                    log.debug("RX: %s", text)
+                    return text
+        raise TimeoutError(f"{prompt!r} not seen within {timeout}s; got: "
+                           f"{buf[-200:].decode('utf-8', errors='replace')!r}")
+
+    def run(self, cmd: str, prompt: str = "# ", timeout: float = 10.0) -> str:
+        """Send a command and return its output (without echo and prompt)."""
+        self.send(cmd)
+        out = self.read_until(prompt, timeout).replace("\r", "")
+        lines = out.split("\n")
+        return "\n".join(lines[1:-1]).strip()
 
     def expect_login(self, user: str = "root", password: str = "") -> bool:
         """Wait for login prompt and authenticate."""
-        self.read_until("login:", timeout=30)
-        self.send(user)
-        if password:
-            self.read_until("Password:")
-            self.send(password)
-        resp = self.read_until("# ", timeout=10)
-        return "# " in resp
+        try:
+            self.read_until("login:", timeout=30)
+            self.send(user, flush=False)
+            if password:
+                self.read_until("assword:")
+                self.send(password, flush=False)
+            self.read_until("# " if user == "root" else "$ ", timeout=10)
+            return True
+        except TimeoutError as e:
+            log.error("Login failed: %s", e)
+            return False
 
     def close(self) -> None:
         if self._ser and self._ser.is_open:
@@ -275,8 +294,7 @@ def list_serial_ports():
 if __name__ == "__main__":
     list_serial_ports()
     with SerialComm("${1:/dev/ttyUSB0}", baud=${2:115200}) as s:
-        s.send("${3:uname -r}")
-        print(s.read_until("${4:# }"))
+        print(s.run("${3:uname -r}", prompt="${4:# }"))
 $0
 endsnippet
 
@@ -303,14 +321,26 @@ class SSHClient:
     def __init__(self, host: str, user: str = "root",
                  password: str = "", port: int = 22, timeout: int = 10):
         self._client = paramiko.SSHClient()
+        # Lab boards get reflashed (new host keys) all the time — accept them.
+        # Do NOT copy this policy into anything talking to production hosts.
         self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self._client.connect(
-            hostname=host,
-            username=user,
-            password=password,
-            port=port,
-            timeout=timeout,
-        )
+        try:
+            self._client.connect(
+                hostname=host,
+                username=user,
+                password=password or None,
+                port=port,
+                timeout=timeout,
+                look_for_keys=not password,
+                allow_agent=not password,
+            )
+        except paramiko.AuthenticationException:
+            # Yocto 'debug-tweaks' / empty-password root: needs 'none' auth,
+            # which paramiko never tries on its own.
+            transport = self._client.get_transport()
+            if transport is None or password:
+                raise
+            transport.auth_none(user)
         log.info("SSH connected: %s@%s:%d", user, host, port)
 
     def run(self, cmd: str, timeout: int = 30) -> tuple[int, str, str]:
@@ -320,9 +350,11 @@ class SSHClient:
         """
         log.debug("SSH run: %s", cmd)
         _, stdout, stderr = self._client.exec_command(cmd, timeout=timeout)
+        # Read BEFORE waiting for the exit status: with large output the
+        # remote side blocks on a full window and recv_exit_status() hangs.
+        out = stdout.read().decode(errors="replace").strip()
+        err = stderr.read().decode(errors="replace").strip()
         exit_code = stdout.channel.recv_exit_status()
-        out = stdout.read().decode().strip()
-        err = stderr.read().decode().strip()
         if exit_code != 0:
             log.warning("Command failed (rc=%d): %s\nstderr: %s",
                         exit_code, cmd, err)
@@ -573,7 +605,7 @@ snippet param "pytest parametrize decorator" b
     ${2:("value1", "expected1")},
     ${3:("value2", "expected2")},
 ])
-def test_${4:name}(self, ${1:param}):
+def test_${4:name}(${1:param}):
     ${5:input_val}, ${6:expected} = ${1:param}
     $0
     assert ${6:expected}

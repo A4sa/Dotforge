@@ -9,135 +9,144 @@
 #
 #  Author      : Abdul Sattar
 #  Email       : abdul.linuxdev@gmail.com
-#  Repository  : https://github.com/A4sa/vimrc-Embedded.git
-#  Description : Annotated shell aliases for embedded systems Engineer
+#  Repository  : https://github.com/A4sa/dotforge.git
+#  Description : Annotated shell aliases for embedded systems engineers.
+#                Sourced by shell/bashrc_append. Anything that takes
+#                arguments or needs logic lives in bash_functions instead.
 #
-#  HOW TO ACTIVATE
-#  ---------------
-#   1. Add this block to your ~/.bashrc (once, at the bottom):
+#  ONE-TIME SETUP
+#  --------------
+#   Docker without sudo   : sudo usermod -aG docker $USER   (then log out/in)
+#   Serial without sudo   : sudo usermod -aG dialout $USER  (then log out/in)
 #
-#     if [ -f ~/.bash_aliases ]; then
-#         . ~/.bash_aliases
-#     fi
-#
-#   2. Install recommended tools:
-#       sudo apt install fzf bat picocom cscope universal-ctags
-#
-#   3. Fix Docker permissions (replaces 'alias docker=sudo docker'):
-#       sudo usermod -aG docker $USER && newgrp docker
-#
-#   4. Fix serial port permissions:
-#       sudo usermod -aG dialout $USER  
+# ============================================================================
 
 # ======================= NAVIGATION & SHELL BASICS =======================
 alias clr='clear'
 alias ..='cd ..'
 alias ...='cd ../..'
 alias ....='cd ../../..'
-alias h='history'           # Example h | grep make
-alias o='xdg-open'          # Open files/URLs in default apps
+alias ~='cd ~'
+alias -- -='cd -'
+# Example: h | grep make
+alias h='history'
+# Open files/URLs in the default desktop app
+alias o='xdg-open'
 
 # ====================== SYSTEM & PACKAGE MANAGEMENT ======================
-alias update='sudo apt update && sudo apt upgrade -y && sudo apt autoremove -y'
-alias install='sudo apt install'
-alias remove='sudo apt remove -y'
-alias reboot='sudo reboot'
+if command -v apt &>/dev/null; then
+    alias update='sudo apt update && sudo apt upgrade -y && sudo apt autoremove -y'
+    alias install='sudo apt install'
+    alias remove='sudo apt remove'
+fi
+# Kernel ring buffer. dmesg_restrict=1 on Ubuntu needs sudo.
+#   dmesg   — whole buffer        dmw — follow new messages (like tail -f)
 alias dmesg='sudo dmesg'
+alias dmw='sudo dmesg -w'
+# Human-readable disk usage / free space
+alias df='df -h'
+alias du1='du -h --max-depth=1 | sort -h'
+alias free='free -h'
 
 # ========================= FILE LISTING & SEARCH =========================
-alias ll='ls -alF'          
-alias la='ls -A'
 alias ls='ls --color=auto'
+alias ll='ls -alFh'
+alias la='ls -A'
+alias lt='ls -alFht'                      # newest first — "what did the build just produce?"
+
+# Ubuntu/Debian ship bat as 'batcat'.
+if ! command -v bat &>/dev/null && command -v batcat &>/dev/null; then
+    alias bat='batcat'
+fi
 
 # ========================= FUZZY FINDER (fzf) ==========================
 alias f='fzf'
-alias ff='fzf --preview="bat --style=numbers --color=always {}"'
-alias vfind='vim $(fzf)' # Open file in vim
+# vf (open the picked file in vim) and ff (preview) are functions.
 
 # ============================= Git =====================================
 alias g='git'
 alias gs='git status'
 alias ga='git add'
+alias gap='git add -p'
 alias gc='git commit -m'
+alias gca='git commit --amend --no-edit'
 alias gl='git log'
+alias glg='git log --oneline --graph --decorate --all'
 alias gb='git branch'
 alias gco='git checkout'
+alias gsw='git switch'
 alias gd='git diff'
+alias gds='git diff --staged'
 alias gpl='git pull'
 alias gps='git push'
+# Kernel-style patch workflow
+alias gfp='git format-patch'
+alias gsob='git commit -s'                # commit with Signed-off-by
 
 # ================== PYTHON & VIRTUAL ENVIRONMENTS ===================
 alias python='python3'
 alias py='python3'
-alias pip='pip3'
-alias va='source venv/bin/activate'
+# 'python3 -m pip' always matches the active interpreter / venv.
+alias pip='python3 -m pip'
 alias envd='deactivate'
+# va (activate ./venv or ./.venv) is a function.
 
 # ============================== DOCKER ==============================
-alias docker='sudo docker'
+# No 'sudo' here: add yourself to the docker group (see top of file).
+# sudo docker makes files in bind-mounted build dirs root-owned.
 alias dkps='docker ps'                   # List running containers
 alias dkpsa='docker ps -a'               # List all containers (including stopped)
 alias dkimg='docker images'              # List local images
 alias dkrm='docker rm'                   # Remove a container
 alias dkrmi='docker rmi'                 # Remove an image
-alias dklog='docker logs'                # Show container stdout/stderr logs
+alias dklog='docker logs -f'             # Follow container stdout/stderr logs
 alias dkexec='docker exec -it'           # Enter a running container interactively
 alias dkstop='docker stop'               # Stop a running container
-alias dkprune='docker system prune -f'   # Remove all stopped containers 
+alias dkprune='docker system prune -f'   # Remove stopped containers, dangling images
+# Run a throw-away container with the current dir mounted, as YOU (not root):
+#   dkrun ubuntu:22.04 bash
+alias dkrun='docker run --rm -it -u "$(id -u):$(id -g)" -v "$PWD":"$PWD" -w "$PWD"'
 
 # ========================== BUILD SYSTEM =============================
-alias make='make -j$(nproc)'             
-alias mb='make -j$(nproc)'              # Multi-core parallel build i
-alias mc='make clean'                   # Clean build artifacts 
-alias mdtb='make -j$(nproc) dtbs'       # make the DTB
-alias mbmod='make -j$(nproc) modules'   # make the Driver .ko
-alias mkcs='find . -name "*.[ch]" > cscope.files && cscope -b -q -k && echo "cscope index rebuilt"'
-alias mktags='ctags -R --exclude=.git --exclude="*.o" --exclude="*.ko" . && echo "ctags index rebuilt"'
-alias mkidx='mkcs && mktags'            # Rebuild both at once
+# Interactive 'make' is always parallel. Aliases never affect scripts.
+# Use '\make' for a serial build (readable error output).
+alias make='make -j$(nproc)'
+alias mb='make -j$(nproc)'               # Multi-core parallel build
+alias mc='make clean'                    # Clean build artifacts
+alias mdtb='make -j$(nproc) dtbs'        # Build all device tree blobs
+alias mbmod='make -j$(nproc) modules'    # Build kernel modules (.ko)
+alias kconfig='make menuconfig'          # Kernel/U-Boot/Buildroot config menu
+alias ksave='make savedefconfig'         # Minimal defconfig from .config
+# mkl (make + build.log), mkcs/mktags/mkidx (indexes) are functions.
+alias buildlog='less +G build.log'
+alias buildlogerr='grep -nE "error:|warning:|undefined reference" build.log | tail -40'
 
 # ================== ANDROID DEBUG BRIDGE (ADB) ======================
-alias shell='adb shell' 
-alias adbdev='adb devices'               # List connected devices
-alias adblog='adb logcat'                # Stream Android logcat output
+alias shell='adb shell'
+alias adbdev='adb devices -l'            # List connected devices (with model)
+alias adblog='adb logcat -v threadtime'  # Stream logcat with thread + time
 alias adbr='adb reboot'                  # Reboot the target device
+alias adbroot='adb root && adb wait-for-device && adb remount'
 
 # ===================== SERIAL CONSOLE ================================
+# 'con' is a function:  con [device|index] [baud] [-l]   (see bash_functions)
+# These keep the old short names working.
+alias con0='con /dev/ttyUSB0'
+alias con1='con /dev/ttyUSB1'
+alias con2='con /dev/ttyACM0'
+alias con57='con /dev/ttyUSB0 57600'
+alias con9='con /dev/ttyUSB0 9600'
+alias conlog='con /dev/ttyUSB0 115200 -l'
 
-# ── picocom aliases ───────────────────────────────────────────────────
-alias con='picocom -b 115200 --flow=none /dev/ttyUSB0'
-
-alias con0='picocom -b 115200 --flow=none /dev/ttyUSB0'
-alias con1='picocom -b 115200 --flow=none /dev/ttyUSB1'
-alias con2='picocom -b 115200 --flow=none /dev/ttyACM0'
-
-alias con57='picocom -b 57600 --flow=none /dev/ttyUSB0'
-alias con9='picocom  -b 9600  --flow=none /dev/ttyUSB0'
-
-# TIP:  Review the log later with: cat ~/serial_logs/<file> | less
-alias conlog='mkdir -p ~/serial_logs && picocom -b 115200 --flow=none \
-    --logfile ~/serial_logs/$(date +%Y-%m-%d_%H-%M-%S).log /dev/ttyUSB0'
-
-# ── minicom aliases ────────────────────────────────────────────────────
-alias mcom='minicom'
-
+# minicom — for XMODEM/YMODEM transfers to a bootloader (Ctrl+A S to send).
+alias mcom='minicom -c on'
 alias mcom-setup='sudo minicom -s'
+alias mcom0='minicom -c on -D /dev/ttyUSB0 -b 115200'
+alias mcom1='minicom -c on -D /dev/ttyUSB1 -b 115200'
 
-alias mcom0='minicom -D /dev/ttyUSB0 -b 115200'
-alias mcom1='minicom -D /dev/ttyUSB1 -b 115200'
-
-alias mcom-xfer='minicom -D /dev/ttyUSB0 -b 115200 -c on'
-
-alias lsserial='echo "=== by-id (stable) ===" && \
-    ls /dev/serial/by-id/ 2>/dev/null || echo "none" && \
-    echo "=== raw devices ===" && \
-    ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null || echo "none"'
-
-# =====================  KERNEL / BSP HELPERS ===========================
-alias kconfig='make menuconfig'            # Open Kernel config menu
-
-# Note: kgrep, modcheck, and dlog are defined with proper validation in bash_functions
-
-alias buildlog='tail -50 build.log'
-alias buildlogerr='grep -E "error:|warning:" build.log | tail -30'
-
-
+# ========================= SSH from inside tmux ======================
+# tmux sets TERM=tmux-256color, which BusyBox/Buildroot targets usually
+# don't know ('unknown terminal type' in vi/less/top). Present a common one.
+if [ -n "$TMUX" ]; then
+    alias ssh='TERM=xterm-256color ssh'
+fi

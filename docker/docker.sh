@@ -8,10 +8,10 @@
 #
 #  SUPPORTED DISTROS
 #  -----------------
-#    Ubuntu  20.04 / 22.04 / 24.04
-#    Debian  11 (bullseye) / 12 (bookworm)
-#    Fedora  38 / 39 / 40
-#    Arch Linux
+#    Ubuntu  22.04+ and derivatives (Linux Mint, Pop!_OS, elementary, ...)
+#    Debian  11+ and derivatives
+#    Fedora  (dnf4 and dnf5 — Fedora 41+)
+#    Arch Linux and derivatives (Manjaro, EndeavourOS)
 #
 #  USAGE
 #  -----
@@ -24,6 +24,7 @@
 #    2. Verify the distro is supported
 #    3. Install Docker Engine using the official Docker repository
 #    4. Add the current user to the docker group (no sudo needed after)
+#       NOTE: the docker group is root-equivalent on this machine.
 #    5. Enable and start the Docker service
 #    6. Verify the installation with 'docker run hello-world'
 #
@@ -69,8 +70,28 @@ detect_distro() {
     DISTRO_CODENAME="${VERSION_CODENAME:-unknown}"
     DISTRO_NAME="${PRETTY_NAME:-unknown}"
 
+    # Map derivatives onto the distro whose Docker repository they use.
+    # Docker publishes repos for ubuntu/debian/fedora only, so Mint must use
+    # 'ubuntu' with the Ubuntu codename it is based on (UBUNTU_CODENAME).
+    DOCKER_DISTRO="$DISTRO_ID"
+    case "$DISTRO_ID" in
+        ubuntu|debian|fedora|arch) ;;
+        *)
+            case " ${ID_LIKE:-} " in
+                *" ubuntu "*)
+                    DOCKER_DISTRO=ubuntu
+                    DISTRO_CODENAME="${UBUNTU_CODENAME:-$DISTRO_CODENAME}" ;;
+                *" debian "*)
+                    DOCKER_DISTRO=debian
+                    DISTRO_CODENAME="${DEBIAN_CODENAME:-$DISTRO_CODENAME}" ;;
+                *" fedora "*) DOCKER_DISTRO=fedora ;;
+                *" arch "*)   DOCKER_DISTRO=arch ;;
+            esac
+            ;;
+    esac
+
     info "Detected: ${BOLD}${DISTRO_NAME}${RESET}"
-    info "ID: ${DISTRO_ID}  |  Version: ${DISTRO_VERSION}  |  Codename: ${DISTRO_CODENAME}"
+    info "ID: ${DISTRO_ID}  |  Version: ${DISTRO_VERSION}  |  Codename: ${DISTRO_CODENAME}  |  Docker repo: ${DOCKER_DISTRO}"
 }
 
 
@@ -119,19 +140,18 @@ install_ubuntu_debian() {
 
     # Install prerequisites
     info "Installing prerequisites..."
-    # WHY --ignore-missing-keys: Third-party repos on the machine (AnyDesk,
-    # Google Chrome, etc.) may have expired GPG keys. apt-get update returns
-    # a non-zero exit code for ANY repo error, which would kill this script
-    # via 'set -e'. We update with error tolerance here, then do a targeted
-    # update after adding Docker's repo to verify that one specifically works.
-    sudo apt-get update -qq 2>&1 | grep -v "^W:" || true
+    # WHY '|| warn': third-party repos on the machine (AnyDesk, Chrome, ...)
+    # may have expired GPG keys, and apt-get update fails for ANY repo error,
+    # which would kill this script via 'set -e'. We tolerate errors here,
+    # then do a targeted update of Docker's repo, which must succeed.
+    sudo apt-get update -qq || warn "apt-get update reported errors — continuing"
     sudo apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg lsb-release
 
     # Add Docker's official GPG key
     info "Adding Docker GPG key..."
     sudo install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL "https://download.docker.com/linux/${DISTRO_ID}/gpg" \
+    curl -fsSL "https://download.docker.com/linux/${DOCKER_DISTRO}/gpg" \
         | sudo gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
     sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
@@ -140,7 +160,7 @@ install_ubuntu_debian() {
     echo \
         "deb [arch=$(dpkg --print-architecture) \
 signed-by=/etc/apt/keyrings/docker.gpg] \
-https://download.docker.com/linux/${DISTRO_ID} \
+https://download.docker.com/linux/${DOCKER_DISTRO} \
 ${DISTRO_CODENAME} stable" \
         | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
@@ -180,9 +200,14 @@ install_fedora() {
     # Add Docker's DNF repository
     info "Adding Docker DNF repository..."
     sudo dnf install -y dnf-plugins-core
-    sudo dnf config-manager \
-        --add-repo \
-        https://download.docker.com/linux/fedora/docker-ce.repo
+    # dnf5 (Fedora 41+) changed the config-manager syntax.
+    if dnf --version 2>/dev/null | grep -q '^dnf5'; then
+        sudo dnf config-manager addrepo --overwrite \
+            --from-repofile=https://download.docker.com/linux/fedora/docker-ce.repo
+    else
+        sudo dnf config-manager --add-repo \
+            https://download.docker.com/linux/fedora/docker-ce.repo
+    fi
 
     # Install Docker Engine
     info "Installing Docker Engine..."
@@ -203,8 +228,10 @@ install_fedora() {
 install_arch() {
     step "Installing Docker on ${DISTRO_NAME}"
 
+    # -Syu, never -Sy: a sync without upgrading is a partial upgrade, which
+    # Arch does not support and can break shared libraries.
     info "Installing Docker via pacman..."
-    sudo pacman -Sy --noconfirm docker docker-compose
+    sudo pacman -Syu --needed --noconfirm docker docker-compose docker-buildx
 }
 
 
@@ -215,8 +242,7 @@ post_install() {
 
     # Enable and start Docker service
     info "Enabling Docker service..."
-    sudo systemctl enable docker
-    sudo systemctl start docker
+    sudo systemctl enable --now docker
 
     # Add current user to docker group
     # WHY: Without this, every docker command needs sudo.
@@ -224,6 +250,7 @@ post_install() {
     # NOTE: Group membership takes effect on next login.
     #       Or run 'newgrp docker' immediately without re-login.
     if [ "$RUNNING_AS_ROOT" = false ]; then
+        sudo groupadd -f docker
         info "Adding '${USER}' to the docker group..."
         sudo usermod -aG docker "${USER}"
         warn "Group change requires re-login to take effect."
@@ -282,7 +309,7 @@ main() {
     check_sudo
 
     # Route to the correct installer based on detected distro
-    case "${DISTRO_ID}" in
+    case "${DOCKER_DISTRO}" in
         ubuntu|debian)
             install_ubuntu_debian
             ;;
@@ -294,7 +321,7 @@ main() {
             ;;
         *)
             error "Unsupported distro: '${DISTRO_ID}' (${DISTRO_NAME})
-Supported: Ubuntu, Debian, Fedora, Arch Linux
+Supported: Ubuntu, Debian, Fedora, Arch Linux (and their derivatives)
 Manual install: https://docs.docker.com/engine/install/"
             ;;
     esac

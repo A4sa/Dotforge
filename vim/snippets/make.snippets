@@ -1,0 +1,36 @@
+# ============================================================================
+#  File name   : make.snippets
+#  Author      : Abdul Sattar <abdul.linuxdev@gmail.com>
+#  Repository  : https://github.com/A4sa/dotforge.git
+#  Description : UltiSnips snippets for Makefiles (active when filetype=make).
+#                Recipe lines below use hard tabs — make requires them.
+# ============================================================================
+
+# trigger: kmod_make
+# Out-of-tree Makefile. Cross-compiles when ARCH / CROSS_COMPILE are set
+# (dotforge: xc arm64) and KDIR points at the target kernel build tree.
+snippet kmod_make "Out-of-tree kernel module Makefile" b
+# Out-of-tree kernel module
+#
+#   Native :  make
+#   Target :  xc arm64 && make KDIR=~/linux/out
+#   Install:  make KDIR=... INSTALL_MOD_PATH=/path/to/rootfs install
+
+obj-m += ${1:module_name}.o
+# Multiple source files:
+# $1-y := ${2:main.o hw.o}
+
+KDIR ?= /lib/modules/$(shell uname -r)/build
+
+all:
+	$(MAKE) -C $(KDIR) M=$(CURDIR) modules
+
+install:
+	$(MAKE) -C $(KDIR) M=$(CURDIR) modules_install
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(CURDIR) clean
+
+.PHONY: all install clean
+$0
+endsnippet

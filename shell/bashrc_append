@@ -11,22 +11,23 @@
 #  Author      : Abdul Sattar <abdul.linuxdev@gmail.com>
 #  Repository  : https://github.com/A4sa/dotforge.git
 #  Description : Sources all dotforge shell files from one place.
-#                Users paste ONE block into their ~/.bashrc — done.
+#                install.sh adds ONE block to ~/.bashrc that sources this file.
 #
 #
 #  WHAT THIS FILE DOES
 #  -------------------
-#  1. Loads bash_aliases     — short command aliases
-#  2. Loads bash_functions   — shell functions (xc, dlog, adbpush, etc.)
-#  3. Loads bash_local       — your private machine-specific paths (not in repo)
-#  4. Configures the prompt  — clean PS1 with git branch + exit code
-#  5. Sets developer env     — history, colors, editor, terminal behavior
-#  6. Tool integrations      — fzf, direnv, nvm (if installed)
+#  1. Sets developer env     — history, editor, pager, PATH (no duplicates)
+#  2. Loads bash_aliases     — short command aliases
+#  3. Loads bash_functions   — shell functions (xc, con, mkidx, kccdb, ...)
+#  4. Configures the prompt  — exit code, git branch, cross-compile target
+#  5. Tool integrations      — bash-completion, fzf, zoxide, direnv
+#  6. Loads ~/.bash_local    — LAST, so your machine-specific config wins
 #
 # ============================================================================
 
 
-# This file gets sourced by ~/.bashrc which itself can be called by non-interactive shells (scripts, SSH commands, cron jobs).
+# This file gets sourced by ~/.bashrc, which is also read by non-interactive
+# shells (scp, rsync, 'ssh host cmd'). Anything printed there breaks them.
 [[ $- != *i* ]] && return
 
 
@@ -34,27 +35,148 @@
 # DOTFORGE ROOT
 # ============================================================================
 
-# Resolve the dotforge repo location dynamically.
+# Resolve the repo location from this file's own path (works wherever the
+# repo is cloned). Exported so functions and tmux can find repo files.
 DOTFORGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export DOTFORGE_DIR
+
+
+# ============================================================================
+# PATH — prepend without duplicates
+# ============================================================================
+# Re-sourcing ~/.bashrc (or nested shells / tmux panes) would otherwise grow
+# PATH every time and slow down every command lookup.
+_dotforge_path_prepend() {
+    [ -d "$1" ] || return 0
+    case ":$PATH:" in
+        *":$1:"*) ;;
+        *) PATH="$1${PATH:+:$PATH}" ;;
+    esac
+}
+_dotforge_path_prepend "$HOME/go/bin"          # go install ...
+_dotforge_path_prepend "$HOME/.cargo/bin"      # cargo install ...
+_dotforge_path_prepend "$HOME/.local/bin"      # pip install --user, pipx
+_dotforge_path_prepend "$HOME/.local/scripts"  # your own one-off tools
+export PATH
+
+
+# ============================================================================
+# HISTORY
+# ============================================================================
+
+HISTSIZE=50000
+HISTFILESIZE=100000
+HISTTIMEFORMAT="%Y-%m-%d %H:%M:%S  "
+
+# Ignore commands starting with a space and drop older duplicates.
+HISTCONTROL=ignoreboth:erasedups
+
+# Don't clutter history with these frequently-typed short commands.
+HISTIGNORE="ls:ll:la:cd:pwd:h:clr:clear:exit:history:bg:fg"
+
+# Append to the history file instead of overwriting it; store multi-line
+# commands as one entry.
+shopt -s histappend cmdhist
+
+# Write each command to ~/.bash_history as soon as it runs, so a killed
+# terminal or crashed SSH session never loses history.
+# (Each pane keeps its own up-arrow history; run 'hsync' to pull in commands
+# from other panes. Reloading the whole file on every prompt is slow with
+# 100k lines and mixes unrelated panes together.)
+hsync() { history -a; history -c; history -r; }
+
+
+# ============================================================================
+# SHELL BEHAVIOR
+# ============================================================================
+
+if [ -t 0 ]; then
+    # Free Ctrl+S / Ctrl+Q from XON/XOFF flow control (Vim uses Ctrl+S to save).
+    stty -ixon 2>/dev/null
+    # Don't echo ^C when interrupting a command.
+    stty -echoctl 2>/dev/null
+fi
+
+# Prevent a single stray Ctrl+D from closing the shell (press it twice).
+export IGNOREEOF=1
+
+shopt -s checkwinsize   # Update LINES/COLUMNS after each command (tmux resize)
+shopt -s cdspell        # Auto-correct minor typos in cd arguments
+shopt -s dirspell       # ...and in directory names during completion
+shopt -s globstar       # ** matches recursively:  ls drivers/**/*.dts
+shopt -s extglob        # Extended globs:          rm !(*.c|*.h)
+shopt -s no_empty_cmd_completion
+
+# Completion behaviour (readline).
+bind "set completion-ignore-case on"
+bind "set show-all-if-ambiguous on"
+bind "set colored-stats on"
+bind "set mark-symlinked-directories on"
+
+# Up/Down arrows search history by what you've typed so far:
+#   type 'make' then Up → previous make commands only.
+bind '"\e[A": history-search-backward'
+bind '"\e[B": history-search-forward'
+bind '"\eOA": history-search-backward'
+bind '"\eOB": history-search-forward'
+
+
+# ============================================================================
+# EDITOR & PAGER
+# ============================================================================
+
+# Vim for git commit messages, crontab -e, visudo, etc.
+export EDITOR=vim
+export VISUAL=vim
+
+# less: keep colours (-R), quit if one screen (-F), don't clear screen (-X),
+# case-insensitive search unless uppercase (-i).
+export PAGER=less
+export LESS='-RFXi'
+
+# Colorize man pages.
+export LESS_TERMCAP_mb=$'\e[1;32m'
+export LESS_TERMCAP_md=$'\e[1;32m'
+export LESS_TERMCAP_me=$'\e[0m'
+export LESS_TERMCAP_se=$'\e[0m'
+export LESS_TERMCAP_so=$'\e[01;33m'
+export LESS_TERMCAP_ue=$'\e[0m'
+export LESS_TERMCAP_us=$'\e[1;4;31m'
+export MANPAGER='less -s -M +Gg'
+
+
+# ============================================================================
+# COLORS
+# ============================================================================
+
+# ls colours (dircolors honours ~/.dircolors if you have one).
+if command -v dircolors &>/dev/null; then
+    if [ -r "$HOME/.dircolors" ]; then
+        eval "$(dircolors -b "$HOME/.dircolors")"
+    else
+        eval "$(dircolors -b)"
+    fi
+fi
+alias grep='grep --color=auto'
+alias diff='diff --color=auto'
+alias ip='ip -color=auto'
+
+# GCC coloured diagnostics (also when output goes through 'tee build.log').
+export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 
 
 # ============================================================================
 # SOURCE DOTFORGE SHELL FILES
 # ============================================================================
 
-# bash_aliases — short command aliases (ll, gs, make, con, etc.)
+# bash_aliases — short command aliases (ll, gs, make, ...)
 if [ -f "$DOTFORGE_DIR/shell/bash_aliases" ]; then
     source "$DOTFORGE_DIR/shell/bash_aliases"
 fi
 
-# bash_functions — shell functions (xc, dlog, adbpush, kgrep, etc.)
+# bash_functions — shell functions (xc, con, mkidx, kccdb, ...)
 if [ -f "$DOTFORGE_DIR/shell/bash_functions" ]; then
     source "$DOTFORGE_DIR/shell/bash_functions"
-fi
-
-# bash_local — your private machine-specific config (NOT in the repo)
-if [ -f "$HOME/.bash_local" ]; then
-    source "$HOME/.bash_local"
 fi
 
 
@@ -63,156 +185,97 @@ fi
 # ============================================================================
 #
 # FORMAT:
-#   user@host:~/path [branch] $
-#   └── green if last command succeeded, red if it failed
+#   user@host:~/path (branch) [arm64] ✗1 $
+#                      │         │     │
+#                      │         │     └─ exit code of the last command (only if non-zero)
+#                      │         └─ ARCH from 'xc' — never build for the wrong target
+#                      └─ git branch (or short SHA when detached)
+#   The final '$' is green after success, red after failure.
 #
-#
+# The prompt is built in PROMPT_COMMAND. The exit status is captured FIRST,
+# before anything else runs and overwrites $?.
 
-# Helper: get current git branch
-_git_branch() {
+_DF_RESET='\[\e[0m\]'
+_DF_GREEN='\[\e[0;32m\]'
+_DF_YELLOW='\[\e[0;33m\]'
+_DF_BLUE='\[\e[0;34m\]'
+_DF_MAGENTA='\[\e[0;35m\]'
+_DF_CYAN='\[\e[0;36m\]'
+_DF_RED='\[\e[0;31m\]'
+_DF_BOLD='\[\e[1m\]'
+
+# Git branch without spawning a subshell for the common 'not a repo' case:
+# walk up looking for .git first, and only call git when one exists.
+_dotforge_git_branch() {
+    local dir="$PWD"
+    while [ -n "$dir" ]; do
+        [ -e "$dir/.git" ] && break
+        dir="${dir%/*}"
+    done
+    [ -z "$dir" ] && [ ! -e /.git ] && return
     local branch
-    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-    [ -n "$branch" ] && echo " ($branch)"
+    branch=$(git symbolic-ref --short -q HEAD 2>/dev/null) \
+        || branch=$(git rev-parse --short HEAD 2>/dev/null) \
+        || return
+    printf ' (%s)' "$branch"
 }
 
-# Colors
-_RESET='\[\033[0m\]'
-_GREEN='\[\033[0;32m\]'
-_YELLOW='\[\033[0;33m\]'
-_BLUE='\[\033[0;34m\]'
-_CYAN='\[\033[0;36m\]'
-_RED='\[\033[0;31m\]'
-_BOLD='\[\033[1m\]'
+_dotforge_prompt() {
+    local status=$?                 # MUST be the first line
+    history -a                      # persist history after every command
 
-# PS1 — the prompt shown before every command.
-PS1="${_CYAN}${_BOLD}\u${_RESET}${_CYAN}@\h${_RESET}:${_BLUE}\w${_RESET}${_YELLOW}\$(_git_branch)${_RESET} \$([ \$? -eq 0 ] && echo '${_GREEN}\$${_RESET}' || echo '${_RED}\$${_RESET}') "
+    local venv="" xc="" code="" sym
+    [ -n "$VIRTUAL_ENV" ] && venv="${_DF_MAGENTA}(${VIRTUAL_ENV##*/})${_DF_RESET} "
+    [ -n "$ARCH" ] && xc=" ${_DF_MAGENTA}[${ARCH}]${_DF_RESET}"
+    if [ "$status" -eq 0 ]; then
+        sym="${_DF_GREEN}\$${_DF_RESET}"
+    else
+        code=" ${_DF_RED}✗${status}${_DF_RESET}"
+        sym="${_DF_RED}\$${_DF_RESET}"
+    fi
 
-# PS2 — shown when a command continues on the next line (after \).
-PS2="${_YELLOW}→ ${_RESET}"
-
-
-# ============================================================================
-# HISTORY
-# ============================================================================
-
-# Store 10,000 lines in memory and 20,000 lines on disk.
-HISTSIZE=10000
-HISTFILESIZE=20000
-
-# Add timestamps to history entries.
-HISTTIMEFORMAT="%Y-%m-%d %H:%M:%S  "
-
-# Append to history file, don't overwrite it.
-shopt -s histappend
-
-# Helper: Sync history while preserving the exit code ($?) of the last command
-_dotforge_sync_history() {
-    local exit_status=$?
-    history -a
-    history -c
-    history -r
-    return $exit_status
+    PS1="${venv}${_DF_CYAN}${_DF_BOLD}\u${_DF_RESET}${_DF_CYAN}@\h${_DF_RESET}:"
+    PS1+="${_DF_BLUE}\w${_DF_RESET}${_DF_YELLOW}$(_dotforge_git_branch)${_DF_RESET}"
+    PS1+="${xc}${code} ${sym} "
+    return "$status"                # keep $? intact for later PROMPT_COMMAND hooks
 }
 
-# Save history after every command, not just on exit.
-if [[ ";$PROMPT_COMMAND;" != *";_dotforge_sync_history;"* ]]; then
-    PROMPT_COMMAND="_dotforge_sync_history; $PROMPT_COMMAND"
+# Run first, exactly once (guard against re-sourcing ~/.bashrc).
+if [[ ";${PROMPT_COMMAND};" != *";_dotforge_prompt;"* ]]; then
+    PROMPT_COMMAND="_dotforge_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 fi
 
-# Don't save duplicate commands or commands starting with a space.
-HISTCONTROL=ignoreboth
+# Python venv: the prompt shows the venv itself.
+export VIRTUAL_ENV_DISABLE_PROMPT=1
 
-# Don't clutter history with these frequently-typed short commands.
-HISTIGNORE="ls:ll:la:cd:pwd:h:clr:clear:exit:history:bg:fg"
-
-
-# ============================================================================
-# SHELL BEHAVIOR
-# ============================================================================
-
-# Fix the terminal so Ctrl+S doesn't freeze it (XON/XOFF flow control).
-stty -ixon
-
-# Prevent Ctrl+D from accidentally exiting the shell.
-export IGNOREEOF=1
-
-# Fix escape sequence display in terminal.
-stty -echoctl
-
-# Auto-correct minor typos in cd commands.
-shopt -s cdspell
-
-# Allow ** glob pattern to match recursively across directories.
-shopt -s globstar
-
-# Case-insensitive tab completion.
-bind "set completion-ignore-case on"
-
-# Tab completion shows all matches immediately (no double-tab needed).
-bind "set show-all-if-ambiguous on"
-
-# ============================================================================
-# EDITOR & PAGER
-# ============================================================================
-
-# Set Vim as the default editor for git commit messages, crontan.
-export EDITOR=vim
-export VISUAL=vim
-
-# Set less as the default pager with useful flags.
-export PAGER='less -RFX'
-export LESS='-RFX'
-
-# WHAT: Colorize man pages.
-export LESS_TERMCAP_mb=$'\e[1;32m'
-export LESS_TERMCAP_md=$'\e[1;32m'
-export LESS_TERMCAP_me=$'\e[0m'
-export LESS_TERMCAP_se=$'\e[0m'
-export LESS_TERMCAP_so=$'\e[01;33m'
-export LESS_TERMCAP_ue=$'\e[0m'
-export LESS_TERMCAP_us=$'\e[1;4;31m'
-
-
-# ============================================================================
-# COLORS
-# ============================================================================
-
-# Enable colors in ls, grep, and diff output.
-export CLICOLOR=1
-export GREP_OPTIONS='--color=auto'
-alias grep='grep --color=auto'
-alias diff='diff --color=auto'
-
-# Enable GCC colored output (available since GCC 4.9).
-export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
-
-
-# ============================================================================
-# PATH
-# ============================================================================
-
-# Python user packages (pip install --user)
-export PATH="$HOME/.local/bin:$PATH"
-
-# Go binaries (go install ...)
-[ -d "$HOME/go/bin" ] && export PATH="$HOME/go/bin:$PATH"
-
-# Local scripts — your own tools and one-off scripts
-[ -d "$HOME/.local/scripts" ] && export PATH="$HOME/.local/scripts:$PATH"
-
+# PS2 — shown when a command continues on the next line (after \).
+PS2="${_DF_YELLOW}→ ${_DF_RESET}"
 
 
 # ============================================================================
 # TOOL INTEGRATIONS
 # ============================================================================
 
+# ── bash-completion (git, make targets, apt, systemctl ...) ──────────────
+# Ubuntu's default ~/.bashrc already loads it; load it here otherwise.
+if ! declare -F _init_completion &>/dev/null \
+   && [ -r /usr/share/bash-completion/bash_completion ]; then
+    source /usr/share/bash-completion/bash_completion
+fi
+
 # ── fzf — fuzzy finder ────────────────────────────────────────────────────
+#   Ctrl+R  fuzzy history     Ctrl+T  insert a file path     Alt+C  cd into dir
 if command -v fzf &>/dev/null; then
-    # Ubuntu apt install puts these here
-    [ -f /usr/share/doc/fzf/examples/key-bindings.bash ] && \
-        source /usr/share/doc/fzf/examples/key-bindings.bash
-    [ -f /usr/share/bash-completion/completions/fzf ] && \
-        source /usr/share/bash-completion/completions/fzf
+    # fzf >= 0.48 prints its own integration; older versions ship files.
+    if _df_fzf_init=$(fzf --bash 2>/dev/null); then
+        eval "$_df_fzf_init"
+    else
+        [ -f /usr/share/doc/fzf/examples/key-bindings.bash ] && \
+            source /usr/share/doc/fzf/examples/key-bindings.bash
+        [ -f /usr/share/bash-completion/completions/fzf ] && \
+            source /usr/share/bash-completion/completions/fzf
+    fi
+    unset _df_fzf_init
 
     # fzf appearance — match gruvbox color scheme
     export FZF_DEFAULT_OPTS="
@@ -223,28 +286,44 @@ if command -v fzf &>/dev/null; then
         --color=fg:#ebdbb2,header:#928374,info:#8ec07c,pointer:#fb4934
         --color=marker:#fb4934,fg+:#ebdbb2,prompt:#fb4934,hl+:#fb4934"
 
-    # Use ripgrep as the fzf file source if available (much faster than find)
+    # Use ripgrep as the file source if available (respects .gitignore,
+    # skips build output — much faster than find in a kernel tree).
     if command -v rg &>/dev/null; then
         export FZF_DEFAULT_COMMAND='rg --files --hidden --follow --glob "!.git"'
         export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
     fi
 fi
 
-
 # ── zoxide — smarter cd with frecency ────────────────────────────────────
-#
-# USAGE:    z kernel    → jumps to your most-visited kernel directory
-#           z cv25 dts  → matches multiple path fragments
+#   z kernel     → jumps to your most-visited kernel directory
+#   z cv25 dts   → matches multiple path fragments
 if command -v zoxide &>/dev/null; then
     eval "$(zoxide init bash)"
 fi
-# ============================================================================
-# AUTO-START TMUX
-# ============================================================================
-# Automatically start or attach to a tmux session when the shell opens.
 
-# if command -v tmux &>/dev/null && [ -z "$TMUX" ] && [[ $- == *i* ]]; then
+# ── direnv — per-directory environment ───────────────────────────────────
+#   Put 'export ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-' in a board
+#   tree's .envrc and the toolchain switches automatically when you cd in.
+if command -v direnv &>/dev/null; then
+    eval "$(direnv hook bash)"
+fi
+
+
+# ============================================================================
+# AUTO-START TMUX (opt-in)
+# ============================================================================
+# Uncomment to start or attach to a tmux session when a terminal opens.
+# Not done over SSH-from-scripts because of the interactive guard above.
+
+# if command -v tmux &>/dev/null && [ -z "$TMUX" ] && [ -z "$INSIDE_EMACS" ]; then
 #    exec tmux new-session -A -s forge
 # fi
 
 
+# ============================================================================
+# MACHINE-LOCAL CONFIG — loaded last so it can override anything above
+# ============================================================================
+# Project paths, board aliases, default toolchain. Not in the repo.
+if [ -f "$HOME/.bash_local" ]; then
+    source "$HOME/.bash_local"
+fi

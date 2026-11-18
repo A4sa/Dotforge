@@ -35,22 +35,21 @@ Some aliases and snippets go deeper than the basics — covering cross-compilati
 ## Quick Start
 
 ```bash
-# 1. Clone the repo
+# 1. Clone the repo (keep it here — your config files link into it)
 git clone https://github.com/A4sa/dotforge.git ~/dotforge
 
 # 2. Run the installer
 cd ~/dotforge
-chmod +x scripts/install.sh
 ./scripts/install.sh
 
 # 3. Reload your shell
 source ~/.bashrc
 
-# 4. Open Vim — plugins install automatically on first launch
+# 4. Open Vim
 vim
 ```
 
-That's it. The installer handles dependencies, copies configs, installs vim-plug, and creates a `~/.bash_local` template for your private project paths.
+The installer checks dependencies (apt / dnf / pacman), backs up any file it replaces, **symlinks** the configs into `$HOME`, adds one marked block to `~/.bashrc`, installs the Vim plugins and creates a `~/.bash_local` template for your private paths. Running it again is safe.
 
 ---
 
@@ -58,15 +57,15 @@ That's it. The installer handles dependencies, copies configs, installs vim-plug
 
 | Component | File(s) | What it configures |
 |---|---|---|
-| **Vim** | `vim/vimrc` | Core editor — 13 annotated sections |
-| **Plugins** | `vim/plugin_config.vim` | Plugin list + all plugin config in one file |
-| **Keymaps** | `vim/key_mapping.vim` | Every binding documented with WHY |
-| **Snippets** | `vim/snippets/` | UltiSnips for C (kernel drivers) and Python |
-| **tmux** | `tmux/tmux.conf` | Multiplexer tuned for embedded workflows |
+| **Vim** | `vim/vimrc` | Core editor — persistent undo, swap recovery, kernel-tree detection |
+| **Plugins** | `vim/plugin_config.vim` | Plugin list + all plugin config in one file (incl. clangd LSP) |
+| **Keymaps** | `vim/key_mapping.vim` | Every binding documented with WHY — full list in [`docs/keymaps.md`](docs/keymaps.md) |
+| **Snippets** | `vim/snippets/` | UltiSnips for kernel C (v6.11+ APIs), Makefiles and Python |
+| **tmux** | `tmux/tmux.conf` | Multiplexer tuned for embedded workflows, BSP / ADB layouts |
 | **Aliases** | `shell/bash_aliases` | Short commands for daily Linux work |
-| **Functions** | `shell/bash_functions` | Shell functions: `xc`, `dlog`, `adbpush`, `kgrep` |
-| **Shell env** | `shell/bashrc_append` | One-line loader for the full shell setup |
-| **Docker** | `docker/docker.sh` | Install Docker on Ubuntu, Debian, Fedora, Arch |
+| **Functions** | `shell/bash_functions` | `xc`, `con`, `mkidx`, `kccdb`, `kcheck`, `dtsdump`, `rmmod_insmod` … |
+| **Shell env** | `shell/bashrc_append` | Prompt, history, completion, fzf / zoxide / direnv |
+| **Docker** | `docker/docker.sh` | Install Docker on Ubuntu, Debian, Fedora, Arch (+ derivatives) |
 | **Scripts** | `scripts/` | install · update · uninstall |
 
 ---
@@ -75,36 +74,22 @@ That's it. The installer handles dependencies, copies configs, installs vim-plug
 
 ```
 ┌─ GNOME Terminal ──────────────────────────────────────────────────┐
-│ ┌─ tmux session: "bsp-dev" ───────────────────────────────────┐   │
-│ │  [1:vim]  [2:build]  [3:adb]   ← named windows              │   │
-│ │ ┌──────────────────┬──────────────┬──────────────┐          │   │
-│ │ │                  │              │              │          │   │
-│ │ │   Vim + NERDTree │  make -j8    │  dmesg -w    │          │   │
-│ │ │   cscope nav     │  build log   │  kernel log  │          │   │
-│ │ │   DTS editing    │              │              │          │   │
-│ │ │                  │              │              │          │   │
-│ │ └──────────────────┴──────────────┴──────────────┘          │   │
-│ └─────────────────────────────────────────────────────────────┘   │
+│ ┌─ tmux session ─────────────────────────────────────────────────┐ │
+│ │  [1:bsp]  [2:adb]   ← named windows                            │ │
+│ │ ┌──────────────────────────┬─────────────────────┐             │ │
+│ │ │                          │  mkl  (make + log)  │             │ │
+│ │ │   Vim + NERDTree         │                     │             │ │
+│ │ │   cscope / clangd nav    ├─────────────────────┤             │ │
+│ │ │   DTS editing            │  con  (serial)      │             │ │
+│ │ │                          │                     │             │ │
+│ │ └──────────────────────────┴─────────────────────┘             │ │
+│ └────────────────────────────────────────────────────────────────┘ │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-> **Prefix+A** builds this 3-pane BSP layout automatically.
+> **Prefix+A** builds this layout. The build and console commands are typed but not run — add the target / port and press Enter.
 
-![dotforge workspace](assets/screenshots/workspace-overview.png)
-
-<details>
-<summary>More Screenshots</summary>
-
-**Vim + NERDTree + Tagbar**
-![Vim IDE](assets/screenshots/vim-ide.png)
-
-**tmux BSP Layout (Prefix+A)**
-![tmux layout](assets/screenshots/tmux-bsp-layout.png)
-
-**fzf File Search**
-![fzf search](assets/screenshots/fzf-search.png)
-
-</details>
+<!-- Screenshots: add images to assets/screenshots/ and reference them here. -->
 
 ---
 
@@ -112,40 +97,43 @@ That's it. The installer handles dependencies, copies configs, installs vim-plug
 
 ### Requirements
 
-| Tool | Required by | Install |
+| Tool | Required by | apt package |
 |---|---|---|
-| `vim-gtk3` | Vim (+clipboard, +python3) | `sudo apt install vim-gtk3` |
-| `tmux` | Terminal multiplexer | `sudo apt install tmux` |
-| `git` | Fugitive plugin | `sudo apt install git` |
-| `curl` | vim-plug bootstrap | `sudo apt install curl` |
-| `fzf` | Fuzzy finder | `sudo apt install fzf` |
-| `ripgrep` | `:Rg` search in Vim | `sudo apt install ripgrep` |
-| `bat` | File preview in shell | `sudo apt install bat` |
-| `universal-ctags` | Tagbar plugin | `sudo apt install universal-ctags` |
-| `cscope` | Kernel symbol navigation | `sudo apt install cscope` |
-| `clang-format` | Auto-format on save | `sudo apt install clang-format` |
-| `xclip` | tmux clipboard bridge | `sudo apt install xclip` |
-| `picocom` | Serial console | `sudo apt install picocom` |
+| `vim` (+python3, +clipboard) | Vim, UltiSnips | `vim-gtk3` |
+| `tmux` | Terminal multiplexer | `tmux` |
+| `git`, `curl` | Fugitive, vim-plug | `git curl` |
+| `fzf`, `rg` | Fuzzy finder, `:Rg` | `fzf ripgrep` |
+| `bat` | File preview | `bat` |
+| `ctags`, `cscope` | Tagbar, kernel symbol navigation | `universal-ctags cscope` |
+| `clang-format`, `clangd` | Formatting, LSP | `clang-format clangd` |
+| `bear` | `compile_commands.json` for non-kernel projects | `bear` |
+| `dtc` | `dtsdump` | `device-tree-compiler` |
+| `picocom` | Serial console (`con`) | `picocom` |
+| `xclip` | Clipboard on X11 | `xclip` |
 
-The `install.sh` script detects missing tools and asks if it should install them automatically.
+`install.sh` detects missing tools and offers to install them (`-y` to answer yes, `--no-deps` to skip).
 
-### Fresh Machine Setup
+### How files are installed
 
-```bash
-git clone https://github.com/A4sa/dotforge.git ~/dotforge
-cd ~/dotforge && ./scripts/install.sh
-source ~/.bashrc
-```
+| In `$HOME` | Points to |
+|---|---|
+| `~/.vimrc` | `vim/vimrc` |
+| `~/.vim/plugin_config.vim`, `~/.vim/key_mapping.vim` | `vim/*.vim` |
+| `~/.vim/UltiSnips/*.snippets` | `vim/snippets/*.snippets` |
+| `~/.tmux.conf` | `tmux/tmux.conf` |
+| `~/.bashrc` | gets one block between `# >>> dotforge >>>` and `# <<< dotforge <<<` |
+
+Everything is a symlink into the repo, so a `git pull` updates all of it. Your previous files are saved under `~/.dotforge_backup/<date>/` with their original paths.
+
+Machine-local overrides that are never touched: `~/.bash_local`, `~/.vimrc.local`, `~/.tmux.local.conf`.
 
 ### Install Docker (any distro)
 
 ```bash
-cd ~/dotforge/docker
-chmod +x docker.sh
-./docker.sh
+./docker/docker.sh
 ```
 
-Automatically detects Ubuntu, Debian, Fedora, or Arch and installs Docker Engine from the official repository — not the outdated distro-packaged version.
+Detects Ubuntu, Debian, Fedora or Arch (and derivatives such as Mint or Pop!_OS) and installs Docker Engine from Docker's official repository — not the outdated distro package.
 
 ### Update
 
@@ -153,7 +141,7 @@ Automatically detects Ubuntu, Debian, Fedora, or Arch and installs Docker Engine
 cd ~/dotforge && ./scripts/update.sh
 ```
 
-Pulls the latest commits, re-copies updated configs, and upgrades Vim plugins.
+Pulls the latest commits (keeping local edits via autostash), links any new files and updates the Vim plugins.
 
 ### Uninstall
 
@@ -161,7 +149,7 @@ Pulls the latest commits, re-copies updated configs, and upgrades Vim plugins.
 cd ~/dotforge && ./scripts/uninstall.sh
 ```
 
-Cleanly removes every installed file. Offers to restore backups. Never touches `~/.bash_local` or system packages.
+Removes only the symlinks that point into the repo and the marked `~/.bashrc` block, then offers to restore a backup (backup #1 is your setup from before dotforge). Never touches `~/.bash_local`, your undo history or system packages.
 
 ---
 
@@ -171,73 +159,83 @@ Cleanly removes every installed file. Offers to restore backups. Never touches `
 
 | Plugin | Purpose |
 |---|---|
-| `vim-airline` | Statusline — mode, branch, filename, line/column |
-| `vim-devicons` | File-type icons in NERDTree and the tabline |
+| `gruvbox` | Warm, low-fatigue colour scheme |
+| `vim-airline` | Statusline — mode, branch, hunks, numbered buffer tabs |
+| `vim-devicons` | File-type icons (needs a Nerd Font) |
 | `NERDTree` | Sidebar file explorer with build-artifact filtering |
 | `Tagbar` | Function/struct/enum outline panel (requires ctags) |
 | `fzf` + `fzf.vim` | Fuzzy search files, buffers, symbols, git log |
 | `vim-fugitive` | Full git workflow inside Vim |
-| `vim-gitgutter` | Live git diff signs in the sign column |
-| `auto-pairs` | Auto-close brackets, parens, quotes with FlyMode |
+| `vim-gitgutter` | Changed-line signs, hunk preview / stage / undo |
+| `vim-surround` | Change / add / delete surrounding quotes and brackets |
+| `auto-pairs` | Auto-close brackets, parens, quotes |
 | `NERDCommenter` | Toggle comments for any filetype |
-| `vim-autoformat` | clang-format on save for `.c` and `.h` files |
-| `vim-markdown` | Enhanced Markdown — syntax, folding, concealment |
-| `vim-dt` | Device Tree Source (`.dts`/`.dtsi`) highlighting |
-| `UltiSnips` | Snippet engine for C kernel patterns and Python |
+| `vim-autoformat` | `:Autoformat` with clang-format (manual, or opt-in on save) |
+| `vim-markdown` | Enhanced Markdown — syntax, concealment |
+| `UltiSnips` | Snippet engine for kernel C, Makefiles and Python |
+| `vim-lsp` | clangd / pylsp — loaded only when a server is installed |
+
+Device Tree syntax (`.dts`, `.dtsi`, `.dtso`, `.its`) is built into Vim.
+
+### Everyday features
+
+- **Never lose work** — persistent undo across sessions, swap files in `~/.vim/swap` for crash / SSH-drop recovery.
+- **Kernel-style detection** — files in a Linux / U-Boot tree (found by `Kbuild` + `MAINTAINERS`), or an out-of-tree module (`obj-m` Makefile), automatically get 8-wide hard tabs and a 100-column marker. Mark any vendor tree with `touch .kernel-style`.
+- **Visible whitespace** — tabs, trailing spaces and non-breaking spaces are shown, so a tab/space mix in a patch is caught before `checkpatch`.
+- **`:Checkpatch`** (`Space cp`) — runs the kernel's `checkpatch.pl` on the file; findings go to the quickfix list.
+- **cscope** connects to the nearest `cscope.out` above the file; rebuild with `mkidx`, reconnect with `:CscopeReload`.
+- **LSP** (clangd) — `gd`, `gr`, `K`, `]d` — once a `compile_commands.json` exists (`kccdb`).
+- **Big files** (logs, `System.map` > 10 MB) open fast — syntax and undo are switched off for them.
+- **`:FormatOnSave`** — opt-in clang-format on save, only in projects that have a `.clang-format`.
 
 ### Key Mappings — Quick Reference
 
-> Leader key is `Space`. Full annotated reference: [`vim/key_mapping.vim`](vim/key_mapping.vim)
+> Leader key is `Space`. Full list: [`docs/keymaps.md`](docs/keymaps.md)
 
 | Key | Action |
 |---|---|
+| `Ctrl+S` | Save (normal / insert / visual) |
 | `Space /` | Clear search highlights |
-| `Space v` | Vertical split |
-| `Space s` | Horizontal split |
+| `Space v` / `Space s` | Vertical / horizontal split |
 | `Ctrl+H/J/K/L` | Move between Vim splits |
 | `Tab` / `S-Tab` | Next / previous buffer |
-| `Space y` | Yank to system clipboard |
-| `Space p` | Paste from system clipboard |
-| `Space gs` | Git status (Fugitive) |
-| `Space gd` | Git diff split |
-| `Space gb` | Git blame |
+| `Space 1`…`9` | Jump to buffer tab N |
+| `Space y` / `Space p` | Yank / paste system clipboard |
+| `Space gs` / `gd` / `gb` | Git status / diff / blame (Fugitive) |
+| `]h` / `[h` | Next / previous changed hunk |
 | `Ctrl+F` | Toggle NERDTree |
-| `Space nf` | Find current file in NERDTree |
 | `F8` | Toggle Tagbar |
 | `Ctrl+P` | fzf file search |
-| `Space rg` | Ripgrep content search |
-| `Space rw` | Ripgrep word under cursor |
-| `Ctrl+\` c | cscope: find all callers |
-| `Ctrl+\` d | cscope: find definition |
-| `Ctrl+\` i | cscope: find #includes |
-| `Space m` | Run make |
-| `Space t` | Open terminal split |
+| `Space rg` / `Space rw` | Ripgrep / ripgrep word under cursor |
+| `Space *` | Project-wide search for word → quickfix |
+| `Ctrl+\` c / d / s / a | cscope: callers / definition / references / assignments |
+| `]q` / `[q` | Next / previous quickfix entry |
+| `Space m` / `F5` | Run make, open quickfix on errors |
+| `Space cp` | checkpatch the current file |
+| `Space tt` | Terminal split |
 
 ### Filetype Rules
 
 | Filetype | Indent | Tabs | Notes |
 |---|---|---|---|
-| C / C++ | 4 | Spaces | BSP/driver code standard |
-| Linux kernel C | 8 | Hard tabs | `~/kernel/` path triggers this |
-| Makefile | 4 | Hard tabs | Required — spaces break `make` |
-| Device Tree (`.dts`, `.dtsi`) | 4 | Hard tabs | `/* */` comment style |
-| Kconfig | 1 | Hard tabs | Whitespace-sensitive syntax |
-| Python | 4 | Spaces | PEP 8 |
+| C / C++ | 4 | Spaces | Application / userspace code |
+| C, asm, DTS, Kconfig, Makefile in a kernel tree | 8 | Hard tabs | Detected automatically |
+| Makefile | 8 | Hard tabs | Required — spaces break `make` |
+| Device Tree (`.dts .dtsi .dtso .its`) | 8 | Hard tabs | DT coding style |
+| Kconfig | 8 | Hard tabs | Help text: tab + 2 spaces |
+| Python | 4 | Spaces | PEP 8, 88 columns |
+| git commit | — | — | 72-column wrap, spell check |
+
+Projects with a `.editorconfig` get their own rules automatically.
 
 ### cscope Integration
 
-Build the index once in your project root:
-
 ```bash
-# Using the alias from bash_aliases:
-mkidx
-
-# Or manually:
-find . -name "*.[ch]" > cscope.files && cscope -b -q -k
-ctags -R --exclude=.git --exclude="*.o" .
+mkidx            # kernel/U-Boot tree: 'make cscope tags' for the current $ARCH only
+                 # anywhere else: indexes C/C++/asm, skipping .git, build/, out/
 ```
 
-Vim auto-connects to `cscope.out` if it exists in the current directory.
+Vim connects to the nearest `cscope.out` in the current directory or any parent.
 
 ---
 
@@ -249,121 +247,165 @@ Sessions persist after you close the terminal. Start a 2-hour kernel build, disc
 
 ### Built-in Layouts
 
-**Prefix+A** — BSP Development (3 panes)
+**Prefix+A** — BSP development window
 
 ```
 ┌──────────────────┬──────────────┐
-│                  │  make -j8    │
+│                  │  mkl         │
 │   vim            │  build pane  │
-│   editor         ├──────────────┤
-│                  │  dmesg -w    │
-│                  │  log pane    │
+│                  ├──────────────┤
+│                  │  con         │
+│                  │  serial pane │
 └──────────────────┴──────────────┘
 ```
 
-**Prefix+B** — Dual ADB Shell (2 panes)
+**Prefix+B** — Dual ADB shell
 
 ```
 ┌──────────────────┬──────────────────┐
-│  adb shell       │  adb shell       │
+│  adb devices -l  │  adb devices -l  │
 │  device A        │  device B        │
 └──────────────────┴──────────────────┘
 ```
+
+### Status Bar
+
+```
+( TMUX)( bsp)  (1 vim)(2 build 󱅫)        main  linux ( 0.42 │ 󰍛 37%)( edgeverse)( 23:10)
+```
+
+| Segment | Shows |
+|---|---|
+| Mode | `TMUX` green · `PREFIX` red after Ctrl+B · `COPY` yellow · `ZOOM` peach |
+| Session | Session name — name it with `tmux new -s bsp` or rename with `Prefix+$` |
+| Windows | `index name`; active window in mauve; 󰁓 zoomed, 󱅫 new output in a background window (build finished) |
+| Git / dir | Branch and directory of the active pane |
+| Load / RAM | 1-minute load average (compare with `nproc`) and used memory |
+| Host / time | Hostname (which machine you are on over SSH) and clock |
+
+Each pane also shows its number, command and directory on its top border. Colours are Catppuccin Mocha, defined once as `@c_*` options at the top of the theme section. Icons need a Nerd Font; without one, put `set -g @df_plain 1` in `~/.tmux.local.conf`.
 
 ### Key Reference
 
 | Key | Action |
 |---|---|
-| `Ctrl+H` | Split pane horizontally (new pane below) |
-| `Ctrl+V` | Split pane vertically (new pane right) |
-| `Alt+Arrow` | Move between panes (no prefix needed) |
-| `Prefix+z` | Zoom current pane to full screen |
-| `Prefix+[` / `]` | Previous / next window |
-| `Prefix+A` | Build 3-pane BSP layout |
-| `Prefix+B` | Build dual ADB layout |
+| `Prefix+h` / `Prefix+v` | Split pane below / to the right |
+| `Alt+Arrow` | Move between panes (no prefix) |
+| `Prefix+Shift+Arrow` | Resize pane |
+| `Prefix+z` | Zoom current pane |
+| `Shift+Left/Right` | Previous / next window (no prefix) |
+| `Alt+1`…`9` | Jump to window (no prefix) |
+| `Prefix+A` / `Prefix+B` | BSP layout / dual ADB layout |
+| `Prefix+L` | Toggle logging this pane to `~/tmux_logs/` |
+| `Prefix+K` | Clear scrollback |
+| `Prefix+[` / mouse wheel | Copy mode (`v` select, `y` copy to clipboard) |
 | `Prefix+d` | Detach session (keeps running) |
-| `Prefix+s` | Choose session interactively |
+| `Prefix+s` | Choose session |
 | `Prefix+r` | Reload `~/.tmux.conf` |
+
+The clipboard works over SSH too (OSC 52). Inside tmux, `ssh` sends `TERM=xterm-256color` so BusyBox / Buildroot targets don't complain about an unknown terminal.
 
 ---
 
 ## Shell Configuration
 
+### Prompt
+
+```
+user@host:~/linux (main) [arm64] ✗2 $
+```
+
+Git branch, the active cross-compile `ARCH` (so you never build for the wrong target), the exit code of the last command when it failed, and a green / red `$`.
+
 ### Aliases — Highlights
 
 ```bash
-make            # make -j$(nproc)    — always parallel
-mkcs            # rebuild cscope + ctags index
-mkidx           # rebuild both at once
-con             # picocom -b 115200 --flow=none /dev/ttyUSB0
-mcom            # minicom (for XMODEM/YMODEM file transfer)
-ff              # fzf with bat syntax preview
-vf              # open file selected by fzf in Vim
-dmesg           # sudo dmesg -T (with timestamps)
+make            # make -j$(nproc)    — always parallel (\make for serial)
+mkl             # make + tee build.log; buildlogerr shows the errors
+mkidx           # rebuild cscope + ctags index (ARCH-aware in kernel trees)
+con             # serial console: con [dev|index|by-id] [baud] [-l to log]
+lsserial        # list serial ports with driver (ftdi_sio, cp210x, ch341…) and by-id name
+dmw             # follow the kernel log live
+ff / vf         # fzf with bat preview / open the pick in Vim
 glg             # git log --oneline --graph --decorate --all
+dkrun           # docker run --rm -it as YOUR user with $PWD mounted
 ```
+
+History: Up/Down search by what you've typed so far; every command is saved immediately (`hsync` merges other panes' history).
 
 ### Functions
 
 | Function | Usage | Purpose |
 |---|---|---|
-| `xc` | `xc arm64 aarch64-linux-gnu` | Set cross-compile toolchain |
-| `xc-show` | `xc-show` | Show current `ARCH` / `CROSS_COMPILE` |
-| `xc-clear` | `xc-clear` | Revert to native build |
-| `dlog` | `dlog i2c` | Filter dmesg by keyword |
-| `kgrep` | `kgrep USB_SERIAL` | Search `.config` for a kernel option |
-| `modcheck` | `modcheck i2c_dev` | Check if a kernel module is loaded |
-| `rmmod_insmod` | `rmmod_insmod my_driver` | Reload a kernel module |
-| `adbpush` | `adbpush ./bin /data/local/tmp/` | Push file to ADB target |
-| `adbpull` | `adbpull /data/local/tmp/log.txt` | Pull file from ADB target |
-| `sysinfo` | `sysinfo` | OS, kernel, CPU, RAM, disk summary |
-| `myip` | `myip` | Local and public IP addresses |
-| `up` | `up 3` | Go up N directory levels |
-| `mkcd` | `mkcd new_project` | Create directory and cd into it |
-| `extract` | `extract file.tar.gz` | Extract any archive format |
-| `gsync` | `gsync` | Git fetch + rebase in one step |
+| `xc` | `xc arm64` / `xc arm arm-linux-gnueabihf` / `xc arm64 llvm` | Set cross-compile toolchain (checks the compiler exists) |
+| `xc-show` / `xc-clear` | | Show / clear `ARCH`, `CROSS_COMPILE`, `LLVM` |
+| `con` | `con 1 1500000 -l` | picocom on `/dev/ttyUSB1` at 1.5 Mbaud, logged |
+| `lsserial` | | Serial ports, adapter driver, by-id name, dialout check |
+| `mkl` | `mkl O=out Image dtbs` | make with `build.log`, exit status kept |
+| `mkidx` | | cscope + ctags (kernel: current `$ARCH` only) |
+| `kccdb` | `kccdb` / `kccdb O=out` | `compile_commands.json` for clangd |
+| `kcheck` | `kcheck` / `kcheck HEAD~3` / `kcheck file.c` | checkpatch on commits / files / patches |
+| `dtsdump` | `dtsdump board.dtb` / `dtsdump` | Decompile a DTB, or the board's live device tree |
+| `kgrep` | `kgrep USB_SERIAL` / `kgrep -r USB_SERIAL` | Search `.config` (honours `KBUILD_OUTPUT`) or the running kernel |
+| `modcheck` | `modcheck i2c_dev` | Loaded, built-in (`=y`), or available? |
+| `rmmod_insmod` | `rmmod_insmod out/my_drv.ko debug=1` | Reload a module with params, show the kernel log |
+| `dlog` | `dlog i2c` / `dlog -f 'usb\|xhci'` | Filter (or follow) dmesg |
+| `adbpush` / `adbpull` | `adbpush ./bin /data/local/tmp/` | Push (keeps +x) / pull via ADB |
+| `sysinfo` | | OS, board (DT model), kernel, CPU, cores, RAM, disk, target |
+| `myip` / `portscan` / `portinfo` | | Network helpers |
+| `up` / `mkcd` / `fcd` / `va` | | Navigation, venv activation |
+| `extract` | `extract rootfs.img.zst` | Any archive; keeps the original for single-file formats |
+| `gsync` | | Fetch + rebase onto the branch's upstream (autostash) |
+
+Every function prints its usage with `-h`.
 
 ### Machine-Local Config
 
-Project-specific paths (SDK roots, board aliases, toolchain setup) live in `~/.bash_local` — not committed to the repo. The installer creates a template:
+Project-specific paths (SDK roots, board aliases, toolchain setup) live in `~/.bash_local` — not in the repo, loaded last so it overrides anything:
 
 ```bash
-# ~/.bash_local — not committed, machine-specific
+# ~/.bash_local
 alias sdk='cd ~/path/to/your/sdk'
-alias work='cd ~/Workspace/'
-xc arm64 aarch64-linux-gnu   # auto-set toolchain on login
+alias con='con usb-FTDI_FT232R_USB_UART_A12345-if00-port0 1500000'
 ```
+
+For per-board toolchains, prefer [direnv](https://direnv.net): put `export ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-` in the board tree's `.envrc`.
 
 ---
 
 ## UltiSnips Snippets
 
-### C Snippets (`vim/snippets/c.snippets`)
+Author name and e-mail come from `git config user.name` / `user.email`.
+
+### C Snippets (`vim/snippets/c.snippets`) — kernel v6.11+ APIs
 
 | Trigger | Expands to |
 |---|---|
-| `fhdr` | SPDX file header + includes |
-| `hguard` | `#ifndef` header guard (filename auto-filled) |
-| `kmod` | Complete kernel module skeleton |
-| `kmod_make` | Out-of-tree Makefile |
-| `platdrv` | Platform driver with probe/remove/of_match |
-| `i2cdrv` | I2C driver with regmap |
-| `spidrv` | SPI driver skeleton |
-| `irqh` | `devm_request_irq` + handler |
-| `irqth` | Threaded IRQ handler pair |
-| `dtnode` | DTS platform device node |
-| `dti2c` | DTS I2C slave device node |
-| `dtspi` | DTS SPI slave device node |
-| `deve` | `dev_err` with format |
-| `devi` | `dev_info` with format |
-| `devd` | `dev_dbg` (dynamic debug) |
-| `regr` | `regmap_read` with error check |
-| `regw` | `regmap_write` with error check |
-| `regupd` | `regmap_update_bits` |
+| `fhdr` | SPDX header (`//` in .c, `/* */` in .h) + copyright |
+| `hguard` / `hguardcpp` | Header guard (filename auto-filled) / with `extern "C"` |
+| `kmod` | Minimal kernel module with `pr_fmt` |
+| `platdrv` | Platform driver: MMIO, `devm_clk_get_enabled`, reset, IRQ |
+| `i2cdrv` | I2C driver: regmap, supply regulator, reset GPIO, chip-ID probe |
+| `spidrv` | SPI driver with regmap (mode taken from DT) |
+| `irqh` | Hard IRQ handler + `devm_request_irq` |
+| `irqth` | Threaded IRQ for I2C/SPI devices (`IRQF_ONESHOT`) |
+| `dtnode` / `dti2c` / `dtspi` | DTS MMIO / I2C / SPI device nodes |
+| `dtgpio` / `dtpinctrl` / `dtovl` | GPIO property / pinctrl / overlay skeleton |
+| `deve` / `devi` / `devd` / `devw` | `dev_err` / `dev_info` / `dev_dbg` / `dev_warn` |
+| `deprobe` | `return dev_err_probe(...)` |
+| `regr` / `regw` / `regupd` / `regpoll` | regmap read / write / update bits / poll with timeout |
 | `retcheck` | Return value error check pattern |
-| `bfield` | `BIT()`, `GENMASK()`, `FIELD_GET/PREP` macros |
-| `waitq` | `wait_event_interruptible` pattern |
-| `cdev` | Character device registration |
+| `bfield` | `BIT()`, `GENMASK()`, `FIELD_GET/PREP` |
+| `mutex` / `spinl` | Scoped `guard(mutex)` / IRQ-safe spinlock |
+| `waitq` / `compl` | Wait queue / completion with timeout |
+| `dma` | DMA mask + `dmam_alloc_coherent` |
+| `miscdev` / `cdev` | misc device / character device with error unwinding |
+
+### Makefile Snippets (`vim/snippets/make.snippets`)
+
+| Trigger | Expands to |
+|---|---|
+| `kmod_make` | Out-of-tree module Makefile (cross-compile ready, `install` target) |
 
 ### Python Snippets (`vim/snippets/python.snippets`)
 
@@ -371,16 +413,13 @@ xc arm64 aarch64-linux-gnu   # auto-set toolchain on login
 |---|---|
 | `fhdr` | Script header with shebang + docstring |
 | `main` | argparse CLI entry point |
-| `log` | Module-level logger |
-| `logsetup` | Logging to console + file |
-| `serial` | pyserial `SerialComm` class |
-| `ssh` | paramiko SSH wrapper |
-| `sub` | `subprocess.run` helper |
-| `regparse` | Register bitfield parser + display |
-| `bitmask` | Bitmask and field extraction helpers |
+| `log` / `logsetup` | Module logger / console + file logging |
+| `serial` | pyserial `SerialComm` class (prompt matching, login, `run()`) |
+| `ssh` | paramiko SSH wrapper (handles empty-password Yocto images) |
+| `sub` / `shell` | `subprocess.run` helper / one-liner |
+| `regparse` / `bitmask` | Register bitfield parser / mask helpers |
 | `retry` | Retry decorator for flaky hardware ops |
-| `test` | pytest test module skeleton |
-| `fixture` | pytest fixture |
+| `test` / `fixture` / `param` | pytest module / fixture / parametrize |
 | `timer` | Elapsed time context manager |
 
 ---
@@ -389,28 +428,27 @@ xc arm64 aarch64-linux-gnu   # auto-set toolchain on login
 
 ```
 dotforge/
-├── assets/
-│   └── screenshots/            workspace screenshots for README
 ├── docker/
 │   └── docker.sh               detect distro + install Docker Engine
 ├── docs/
-│   └── keymaps.md              full keybinding cheatsheet
+│   └── keymaps.md              full keybinding cheatsheet (Vim + tmux)
 ├── scripts/
-│   ├── install.sh              one-command workspace setup
-│   ├── update.sh               pull + re-apply + upgrade plugins
+│   ├── install.sh              one-command workspace setup (symlinks)
+│   ├── update.sh               pull + link new files + update plugins
 │   └── uninstall.sh            clean removal with backup restore
 ├── shell/
 │   ├── bash_aliases            short command aliases
-│   ├── bash_functions          shell functions (xc, dlog, kgrep...)
-│   └── bashrc_append           one-line shell loader
+│   ├── bash_functions          shell functions (xc, con, mkidx, kccdb...)
+│   └── bashrc_append           prompt, history, integrations; loads the rest
 ├── tmux/
 │   └── tmux.conf               tmux config for embedded workflows
 ├── vim/
-│   ├── vimrc                   core Vim configuration (13 sections)
+│   ├── vimrc                   core Vim configuration
 │   ├── plugin_config.vim       plugin list + all plugin configuration
 │   ├── key_mapping.vim         all keybindings, annotated
 │   └── snippets/
-│       ├── c.snippets          kernel driver patterns
+│       ├── c.snippets          kernel driver + DT patterns
+│       ├── make.snippets       kernel module Makefile
 │       └── python.snippets     embedded automation patterns
 └── README.md
 ```
@@ -423,14 +461,13 @@ Issues and pull requests are welcome.
 
 If you're adding a new alias or function, follow the documentation style in the existing files — every entry needs a WHAT and a WHY. A setting without a reason isn't documentation, it's just noise.
 
-```bash
-# Fork → clone → branch
-git checkout -b feature/your-feature
+Before opening a PR:
 
-# Make changes, then open a PR against main
+```bash
+shellcheck shell/* scripts/*.sh docker/docker.sh
 ```
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full guide.
+In Vim files, keep comments on their own line above a mapping — a `"` after a `:map` command becomes part of the mapping.
 
 ---
 

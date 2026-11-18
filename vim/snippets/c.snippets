@@ -12,47 +12,62 @@
 #  Repository  : https://github.com/A4sa/dotforge.git
 #  Description : UltiSnips snippets for embedded C and Linux kernel development.
 #
+#  KERNEL VERSION
+#  --------------
+#  Driver snippets target the CURRENT kernel API (v6.11 and newer):
+#    - platform/i2c/spi .remove return void           (6.11 / 6.1 / 5.18)
+#    - i2c .probe takes only the client               (6.3)
+#    - class_create() takes only the name             (6.4)
+#    - devm_clk_get_enabled()                         (6.3)
+#  For an older vendor kernel, adjust those lines.
+#
+#  AUTHOR NAME / EMAIL
+#  -------------------
+#  Filled in from 'git config user.name' / 'user.email', so the snippets
+#  carry YOUR name in MODULE_AUTHOR, not the dotforge author's.
+#
 #  HOW ULTISNIPS WORKS
 #  -------------------
 #  1. Type the trigger word in INSERT mode
 #  2. Press Tab  → expands the snippet
 #  3. Press Tab  → jump to next placeholder  ($1, $2 ...)
 #  4. Press S-Tab → jump to previous placeholder
-#  5. ${1:default} → placeholder with a default value
-#  6. $0          → final cursor position after all tabs
+#  :UltiSnipsEdit opens this file for the current filetype.
 #
-#  INSTALL ULTISNIPS
-#  -----------------
-#  Add to plugin_config.vim:
-#    Plug 'SirVer/ultisnips'
-#    Plug 'honza/vim-snippets'    " optional community snippets
-#
-#  Add to plugin_config.vim config section:
-#    let g:UltiSnipsExpandTrigger       = '<tab>'
-#    let g:UltiSnipsJumpForwardTrigger  = '<tab>'
-#    let g:UltiSnipsJumpBackwardTrigger = '<s-tab>'
-#    let g:UltiSnipsEditSplit           = 'vertical'
-#
-#  PLACE THIS FILE AT:
-#    ~/.vim/UltiSnips/c.snippets
-#    OR: vim/snippets/c.snippets  (symlinked by install.sh)
+#  INSTALLED AT: ~/.vim/UltiSnips/c.snippets (symlink to the repo, install.sh)
 #
 #  TABLE OF CONTENTS
 #  -----------------
 #  [1]  File Header
 #  [2]  Header Guards
-#  [3]  Kernel Module Skeleton
+#  [3]  Kernel Module Skeleton   (Makefile: see make.snippets → kmod_make)
 #  [4]  Platform Driver
 #  [5]  I2C Driver
 #  [6]  SPI Driver
 #  [7]  Interrupt Handler
-#  [8]  Device Tree Binding Stub
+#  [8]  Device Tree Nodes
 #  [9]  Debug & Logging
 #  [10] Common Kernel Patterns
-#  [11] Memory Management
+#  [11] Memory Management / DMA
 #  [12] Miscellaneous C Patterns
 #
 # ============================================================================
+
+# Author helpers — read once from git config.
+global !p
+import re
+import subprocess
+def git_cfg(key, default):
+	try:
+		out = subprocess.run(['git', 'config', key], capture_output=True, text=True, timeout=2).stdout.strip()
+		return out or default
+	except Exception:
+		return default
+def author():
+	return git_cfg('user.name', 'Your Name')
+def email():
+	return git_cfg('user.email', 'you@example.com')
+endglobal
 
 
 # ============================================================================
@@ -60,22 +75,15 @@
 # ============================================================================
 
 # trigger: fhdr
-# Inserts a professional file header comment block
+# SPDX header. .c files use '//' for the SPDX line, headers use '/* */'
+# (Documentation/process/license-rules.rst).
 snippet fhdr "File header for kernel/BSP source files" b
-// SPDX-License-Identifier: GPL-2.0-only
+`!p snip.rv = '// SPDX-License-Identifier: ' if snip.fn.endswith('.c') else '/* SPDX-License-Identifier: '`${1:GPL-2.0-only}`!p snip.rv = '' if snip.fn.endswith('.c') else ' */'`
 /*
- * ${1:driver_name}.c — ${2:Brief description of what this driver does}
+ * ${2:Brief description of this file}
  *
- * Author  : ${3:Abdul Sattar} <${4:abdul.linuxdev@gmail.com}>
- * Created : `!v strftime('%B %Y')`
- *
- * ${5:Longer description: what hardware this drives, which SoC/board,
- * key design decisions, register map reference, etc.}
+ * Copyright (C) `!v strftime('%Y')` ${3:`!p snip.rv = author()`} <${4:`!p snip.rv = email()`}>
  */
-
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/init.h>
 $0
 endsnippet
 
@@ -85,10 +93,21 @@ endsnippet
 # ============================================================================
 
 # trigger: hguard
-# Standard #ifndef header guard — uses the filename automatically
+# Header guard from the file name: foo-bar.h → __FOO_BAR_H
 snippet hguard "Header file guard (#ifndef)" b
-#ifndef ${1:`!v toupper(substitute(expand('%:t:r'), '[^a-zA-Z0-9]', '_', 'g'))`}_H
-#define ${1:`!v toupper(substitute(expand('%:t:r'), '[^a-zA-Z0-9]', '_', 'g'))`}_H
+#ifndef ${1:`!p snip.rv = '__' + re.sub(r'[^A-Za-z0-9]', '_', snip.basename or 'HEADER').upper() + '_H'`}
+#define $1
+
+$0
+
+#endif /* $1 */
+endsnippet
+
+# trigger: hguardcpp
+# Header guard with extern "C" — for userspace headers shared with C++.
+snippet hguardcpp "Header guard with extern C (userspace)" b
+#ifndef ${1:`!p snip.rv = re.sub(r'[^A-Za-z0-9]', '_', snip.basename or 'HEADER').upper() + '_H'`}
+#define $1
 
 #ifdef __cplusplus
 extern "C" {
@@ -100,11 +119,11 @@ $0
 }
 #endif
 
-#endif /* ${1:`!v toupper(substitute(expand('%:t:r'), '[^a-zA-Z0-9]', '_', 'g'))`}_H */
+#endif /* $1 */
 endsnippet
 
 # trigger: once
-# Pragma once (non-standard but widely supported)
+# Pragma once (non-standard but widely supported; not used in the kernel)
 snippet once "Pragma once header guard" b
 #pragma once
 
@@ -117,63 +136,41 @@ endsnippet
 # ============================================================================
 
 # trigger: kmod
-# Full minimal kernel module — compiles and loads out of the box
+# Minimal kernel module — compiles and loads out of the box.
+# pr_fmt prefixes every pr_*() message with the module name.
 snippet kmod "Minimal kernel module skeleton" b
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * ${1:module_name}.c — ${2:Module description}
+ * ${2:Module description}
  *
- * Author: ${3:Abdul Sattar} <${4:abdul.linuxdev@gmail.com}>
+ * Copyright (C) `!v strftime('%Y')` ${3:`!p snip.rv = author()`} <${4:`!p snip.rv = email()`}>
  */
 
-#include <linux/module.h>
-#include <linux/kernel.h>
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/init.h>
+#include <linux/module.h>
 
-#define DRIVER_NAME "${1:module_name}"
-
-static int __init ${1:module_name}_init(void)
+static int __init ${1:`!p snip.rv = re.sub(r'[^A-Za-z0-9_]', '_', snip.basename or 'driver_name')`}_init(void)
 {
-	pr_info(DRIVER_NAME ": loaded\n");
+	pr_info("loaded\n");
 	return 0;
 }
 
-static void __exit ${1:module_name}_exit(void)
+static void __exit $1_exit(void)
 {
-	pr_info(DRIVER_NAME ": unloaded\n");
+	pr_info("unloaded\n");
 }
 
-module_init(${1:module_name}_init);
-module_exit(${1:module_name}_exit);
+module_init($1_init);
+module_exit($1_exit);
 
-MODULE_AUTHOR("${3:Abdul Sattar} <${4:abdul.linuxdev@gmail.com}>");
-MODULE_DESCRIPTION("${2:Module description}");
-MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("$3 <$4>");
+MODULE_DESCRIPTION("$2");
+MODULE_LICENSE("GPL");
 $0
 endsnippet
 
-# trigger: kmod_make
-# Minimal out-of-tree Makefile for a kernel module
-snippet kmod_make "Out-of-tree kernel module Makefile" b
-# Minimal out-of-tree Makefile
-# Usage:
-#   make -C /lib/modules/$(uname -r)/build M=$(pwd) modules
-#   make -C /lib/modules/$(uname -r)/build M=$(pwd) clean
-
-obj-m += ${1:module_name}.o
-
-# If your module has multiple source files:
-# ${1:module_name}-objs := file1.o file2.o
-
-KDIR ?= /lib/modules/$(shell uname -r)/build
-
-all:
-	$(MAKE) -C $(KDIR) M=$(PWD) modules
-
-clean:
-	$(MAKE) -C $(KDIR) M=$(PWD) clean
-$0
-endsnippet
 
 
 # ============================================================================
@@ -181,105 +178,116 @@ endsnippet
 # ============================================================================
 
 # trigger: platdrv
-# Full platform_driver skeleton with probe/remove/of_match_table
+# platform_driver with MMIO, clock, reset and IRQ — all devm-managed, so
+# teardown happens in exact reverse order of probe (IRQ is freed BEFORE the
+# clock is gated; the handler can never touch an unclocked block).
 snippet platdrv "Linux platform driver skeleton" b
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * ${1:driver_name}.c — ${2:Platform driver for X peripheral}
+ * ${2:Platform driver for X peripheral}
  *
- * Author: ${3:Abdul Sattar} <${4:abdul.linuxdev@gmail.com}>
+ * Copyright (C) `!v strftime('%Y')` ${3:`!p snip.rv = author()`} <${4:`!p snip.rv = email()`}>
  */
 
+#include <linux/clk.h>
+#include <linux/delay.h>
+#include <linux/interrupt.h>
+#include <linux/io.h>
+#include <linux/mod_devicetable.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
-#include <linux/of.h>
-#include <linux/of_device.h>
-#include <linux/io.h>
-#include <linux/clk.h>
+#include <linux/reset.h>
 
-#define DRIVER_NAME "${1:driver_name}"
-
-/* Private data structure — one instance per device */
-struct ${1:driver_name}_priv {
-	struct device	*dev;
-	void __iomem	*base;		/* MMIO base address */
-	struct clk	*clk;		/* peripheral clock */
-	int		 irq;		/* interrupt line */
+struct ${1:`!p snip.rv = re.sub(r'[^A-Za-z0-9_]', '_', snip.basename or 'driver_name')`}_priv {
+	struct device *dev;
+	void __iomem *base;		/* MMIO base address */
+	struct clk *clk;		/* peripheral clock */
+	struct reset_control *rst;	/* optional reset line */
+	int irq;
 };
 
-static int ${1:driver_name}_probe(struct platform_device *pdev)
+static irqreturn_t $1_irq_handler(int irq, void *dev_id)
 {
-	struct ${1:driver_name}_priv *priv;
-	struct resource *res;
+	struct $1_priv *priv = dev_id;
+
+	/* TODO: read the status register; return IRQ_NONE if it is not ours */
+	/* TODO: clear the interrupt at the hardware level */
+	(void)priv;
+
+	return IRQ_HANDLED;
+}
+
+static int $1_probe(struct platform_device *pdev)
+{
+	struct device *dev = &pdev->dev;
+	struct $1_priv *priv;
 	int ret;
 
-	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
+	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
+	priv->dev = dev;
 
-	priv->dev = &pdev->dev;
-
-	/* Map MMIO registers */
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	priv->base = devm_ioremap_resource(&pdev->dev, res);
+	priv->base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(priv->base))
 		return PTR_ERR(priv->base);
 
-	/* Get and enable clock */
-	priv->clk = devm_clk_get(&pdev->dev, NULL);
-	if (IS_ERR(priv->clk)) {
-		dev_err(&pdev->dev, "failed to get clock\n");
-		return PTR_ERR(priv->clk);
-	}
+	/* Clock: enabled now, disabled automatically on unbind / probe failure */
+	priv->clk = devm_clk_get_enabled(dev, NULL);
+	if (IS_ERR(priv->clk))
+		return dev_err_probe(dev, PTR_ERR(priv->clk), "failed to get clock\n");
 
-	ret = clk_prepare_enable(priv->clk);
-	if (ret) {
-		dev_err(&pdev->dev, "failed to enable clock: %d\n", ret);
-		return ret;
-	}
+	/* Optional reset: pulse it so the IP starts from a known state.
+	 * (assert/deassert works on every reset controller; _reset() does not) */
+	priv->rst = devm_reset_control_get_optional_exclusive(dev, NULL);
+	if (IS_ERR(priv->rst))
+		return dev_err_probe(dev, PTR_ERR(priv->rst), "failed to get reset\n");
+	reset_control_assert(priv->rst);
+	usleep_range(10, 20);
+	ret = reset_control_deassert(priv->rst);
+	if (ret)
+		return dev_err_probe(dev, ret, "failed to release reset\n");
 
-	/* Get IRQ */
 	priv->irq = platform_get_irq(pdev, 0);
 	if (priv->irq < 0)
 		return priv->irq;
 
+	/* Trigger type comes from the DT 'interrupts' property — pass 0 here */
+	ret = devm_request_irq(dev, priv->irq, $1_irq_handler, 0,
+			       dev_name(dev), priv);
+	if (ret)
+		return dev_err_probe(dev, ret, "failed to request IRQ %d\n", priv->irq);
+
 	platform_set_drvdata(pdev, priv);
-
-	dev_info(&pdev->dev, "${1:driver_name} probed successfully\n");
+	dev_dbg(dev, "probed\n");
 	return 0;
 }
 
-static int ${1:driver_name}_remove(struct platform_device *pdev)
+static void $1_remove(struct platform_device *pdev)
 {
-	struct ${1:driver_name}_priv *priv = platform_get_drvdata(pdev);
-
-	clk_disable_unprepare(priv->clk);
-
-	dev_info(&pdev->dev, "${1:driver_name} removed\n");
-	return 0;
+	/* devm undoes probe in reverse order: IRQ, reset, clock, MMIO */
+	dev_dbg(&pdev->dev, "removed\n");
 }
 
-/* Device Tree match table */
-static const struct of_device_id ${1:driver_name}_of_match[] = {
-	{ .compatible = "${5:vendor,driver-name}" },
+static const struct of_device_id $1_of_match[] = {
+	{ .compatible = "${5:vendor,device}" },
 	{ /* sentinel */ }
 };
-MODULE_DEVICE_TABLE(of, ${1:driver_name}_of_match);
+MODULE_DEVICE_TABLE(of, $1_of_match);
 
-static struct platform_driver ${1:driver_name}_driver = {
-	.probe  = ${1:driver_name}_probe,
-	.remove = ${1:driver_name}_remove,
+static struct platform_driver $1_driver = {
+	.probe  = $1_probe,
+	.remove = $1_remove,
 	.driver = {
-		.name           = DRIVER_NAME,
-		.of_match_table = ${1:driver_name}_of_match,
+		.name           = "$1",
+		.of_match_table = $1_of_match,
 	},
 };
+module_platform_driver($1_driver);
 
-module_platform_driver(${1:driver_name}_driver);
-
-MODULE_AUTHOR("${3:Abdul Sattar} <${4:abdul.linuxdev@gmail.com}>");
-MODULE_DESCRIPTION("${2:Platform driver for X peripheral}");
-MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("$3 <$4>");
+MODULE_DESCRIPTION("$2");
+MODULE_LICENSE("GPL");
 $0
 endsnippet
 
@@ -289,94 +297,114 @@ endsnippet
 # ============================================================================
 
 # trigger: i2cdrv
-# Full i2c_driver skeleton with probe/remove/id_table/of_match
+# i2c_driver with regmap, optional supply regulator and reset GPIO —
+# the usual power-on sequence for a sensor/PMIC/codec.
 snippet i2cdrv "Linux I2C driver skeleton" b
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * ${1:driver_name}.c — ${2:I2C driver for X sensor/device}
+ * ${2:I2C driver for X sensor/device}
  *
- * Author: ${3:Abdul Sattar} <${4:abdul.linuxdev@gmail.com}>
+ * Copyright (C) `!v strftime('%Y')` ${3:`!p snip.rv = author()`} <${4:`!p snip.rv = email()`}>
  */
 
-#include <linux/module.h>
+#include <linux/delay.h>
+#include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
-#include <linux/of.h>
+#include <linux/mod_devicetable.h>
+#include <linux/module.h>
 #include <linux/regmap.h>
-
-#define DRIVER_NAME "${1:driver_name}"
+#include <linux/regulator/consumer.h>
 
 /* Register map */
-#define ${5:REG_STATUS}		0x00
+#define ${5:REG_CHIP_ID}		0x00
 #define ${6:REG_CTRL}		0x01
 
-struct ${1:driver_name}_priv {
-	struct i2c_client	*client;
-	struct regmap		*regmap;
+struct ${1:`!p snip.rv = re.sub(r'[^A-Za-z0-9_]', '_', snip.basename or 'driver_name')`}_priv {
+	struct device *dev;
+	struct i2c_client *client;
+	struct regmap *regmap;
+	struct gpio_desc *reset_gpio;
 };
 
-static const struct regmap_config ${1:driver_name}_regmap_config = {
-	.reg_bits  = 8,
-	.val_bits  = 8,
-	.max_register = 0xFF,
+static const struct regmap_config $1_regmap_config = {
+	.reg_bits     = 8,
+	.val_bits     = 8,
+	.max_register = 0xff,
 };
 
-static int ${1:driver_name}_probe(struct i2c_client *client,
-				  const struct i2c_device_id *id)
+static int $1_probe(struct i2c_client *client)
 {
-	struct ${1:driver_name}_priv *priv;
+	struct device *dev = &client->dev;
+	struct $1_priv *priv;
+	unsigned int id;
+	int ret;
 
-	priv = devm_kzalloc(&client->dev, sizeof(*priv), GFP_KERNEL);
+	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
-
+	priv->dev = dev;
 	priv->client = client;
 
-	priv->regmap = devm_regmap_init_i2c(client, &${1:driver_name}_regmap_config);
-	if (IS_ERR(priv->regmap)) {
-		dev_err(&client->dev, "failed to init regmap\n");
-		return PTR_ERR(priv->regmap);
+	/* Power: enabled now, disabled automatically on unbind */
+	ret = devm_regulator_get_enable_optional(dev, "vdd");
+	if (ret && ret != -ENODEV)
+		return dev_err_probe(dev, ret, "failed to enable vdd\n");
+
+	/* Optional active-low reset line: assert, wait, release */
+	priv->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR(priv->reset_gpio))
+		return dev_err_probe(dev, PTR_ERR(priv->reset_gpio), "failed to get reset GPIO\n");
+	if (priv->reset_gpio) {
+		usleep_range(1000, 2000);
+		gpiod_set_value_cansleep(priv->reset_gpio, 0);
+		usleep_range(${7:5000}, ${8:10000});	/* datasheet power-up time */
 	}
 
+	priv->regmap = devm_regmap_init_i2c(client, &$1_regmap_config);
+	if (IS_ERR(priv->regmap))
+		return dev_err_probe(dev, PTR_ERR(priv->regmap), "failed to init regmap\n");
+
+	/* Talk to the chip once: a wrong address / missing pull-ups fails here */
+	ret = regmap_read(priv->regmap, $5, &id);
+	if (ret)
+		return dev_err_probe(dev, ret, "no response at 0x%02x\n", client->addr);
+
 	i2c_set_clientdata(client, priv);
-
-	dev_info(&client->dev, "${1:driver_name} probed at 0x%02x\n",
-		 client->addr);
+	dev_info(dev, "chip id 0x%02x at 0x%02x\n", id, client->addr);
 	return 0;
 }
 
-static int ${1:driver_name}_remove(struct i2c_client *client)
+static void $1_remove(struct i2c_client *client)
 {
-	dev_info(&client->dev, "${1:driver_name} removed\n");
-	return 0;
+	dev_dbg(&client->dev, "removed\n");
 }
 
-static const struct i2c_device_id ${1:driver_name}_id[] = {
-	{ "${1:driver_name}", 0 },
+static const struct i2c_device_id $1_id[] = {
+	{ "$1" },
 	{ }
 };
-MODULE_DEVICE_TABLE(i2c, ${1:driver_name}_id);
+MODULE_DEVICE_TABLE(i2c, $1_id);
 
-static const struct of_device_id ${1:driver_name}_of_match[] = {
-	{ .compatible = "${7:vendor,driver-name}" },
+static const struct of_device_id $1_of_match[] = {
+	{ .compatible = "${9:vendor,device}" },
 	{ }
 };
-MODULE_DEVICE_TABLE(of, ${1:driver_name}_of_match);
+MODULE_DEVICE_TABLE(of, $1_of_match);
 
-static struct i2c_driver ${1:driver_name}_driver = {
+static struct i2c_driver $1_driver = {
 	.driver = {
-		.name           = DRIVER_NAME,
-		.of_match_table = ${1:driver_name}_of_match,
+		.name           = "$1",
+		.of_match_table = $1_of_match,
 	},
-	.probe    = ${1:driver_name}_probe,
-	.remove   = ${1:driver_name}_remove,
-	.id_table = ${1:driver_name}_id,
+	.probe    = $1_probe,
+	.remove   = $1_remove,
+	.id_table = $1_id,
 };
+module_i2c_driver($1_driver);
 
-module_i2c_driver(${1:driver_name}_driver);
-
-MODULE_AUTHOR("${3:Abdul Sattar} <${4:abdul.linuxdev@gmail.com}>");
-MODULE_DESCRIPTION("${2:I2C driver for X sensor/device}");
-MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("$3 <$4>");
+MODULE_DESCRIPTION("$2");
+MODULE_LICENSE("GPL");
 $0
 endsnippet
 
@@ -386,84 +414,94 @@ endsnippet
 # ============================================================================
 
 # trigger: spidrv
-# Full spi_driver skeleton
+# spi_driver. SPI mode (CPOL/CPHA), CS polarity and max frequency come from
+# the DT node (spi-cpol, spi-cpha, spi-cs-high, spi-max-frequency) — the
+# driver must not overwrite spi->mode, or it clobbers those DT flags.
 snippet spidrv "Linux SPI driver skeleton" b
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * ${1:driver_name}.c — ${2:SPI driver for X device}
+ * ${2:SPI driver for X device}
  *
- * Author: ${3:Abdul Sattar} <${4:abdul.linuxdev@gmail.com}>
+ * Copyright (C) `!v strftime('%Y')` ${3:`!p snip.rv = author()`} <${4:`!p snip.rv = email()`}>
  */
 
+#include <linux/mod_devicetable.h>
 #include <linux/module.h>
+#include <linux/regmap.h>
 #include <linux/spi/spi.h>
-#include <linux/of.h>
 
-#define DRIVER_NAME "${1:driver_name}"
-
-struct ${1:driver_name}_priv {
+struct ${1:`!p snip.rv = re.sub(r'[^A-Za-z0-9_]', '_', snip.basename or 'driver_name')`}_priv {
+	struct device *dev;
 	struct spi_device *spi;
+	struct regmap *regmap;
 };
 
-static int ${1:driver_name}_probe(struct spi_device *spi)
+static const struct regmap_config $1_regmap_config = {
+	.reg_bits     = 8,
+	.val_bits     = 8,
+	.max_register = 0x7f,
+	.read_flag_mask = 0x80,		/* common: MSB=1 means read — check datasheet */
+};
+
+static int $1_probe(struct spi_device *spi)
 {
-	struct ${1:driver_name}_priv *priv;
+	struct device *dev = &spi->dev;
+	struct $1_priv *priv;
 	int ret;
 
-	priv = devm_kzalloc(&spi->dev, sizeof(*priv), GFP_KERNEL);
+	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
-
+	priv->dev = dev;
 	priv->spi = spi;
 
-	/* Configure SPI mode */
-	spi->mode = SPI_MODE_${5:0};
-	spi->bits_per_word = ${6:8};
+	/* Only set what DT can't describe; keep DT mode flags intact */
+	spi->bits_per_word = ${5:8};
 	ret = spi_setup(spi);
-	if (ret) {
-		dev_err(&spi->dev, "spi_setup failed: %d\n", ret);
-		return ret;
-	}
+	if (ret)
+		return dev_err_probe(dev, ret, "spi_setup failed\n");
+
+	priv->regmap = devm_regmap_init_spi(spi, &$1_regmap_config);
+	if (IS_ERR(priv->regmap))
+		return dev_err_probe(dev, PTR_ERR(priv->regmap), "failed to init regmap\n");
 
 	spi_set_drvdata(spi, priv);
-
-	dev_info(&spi->dev, "${1:driver_name} probed\n");
+	dev_info(dev, "probed (mode %u, %u Hz)\n",
+		 (unsigned int)(spi->mode & SPI_MODE_X_MASK), spi->max_speed_hz);
 	return 0;
 }
 
-static int ${1:driver_name}_remove(struct spi_device *spi)
+static void $1_remove(struct spi_device *spi)
 {
-	dev_info(&spi->dev, "${1:driver_name} removed\n");
-	return 0;
+	dev_dbg(&spi->dev, "removed\n");
 }
 
-static const struct of_device_id ${1:driver_name}_of_match[] = {
-	{ .compatible = "${7:vendor,driver-name}" },
+static const struct of_device_id $1_of_match[] = {
+	{ .compatible = "${6:vendor,device}" },
 	{ }
 };
-MODULE_DEVICE_TABLE(of, ${1:driver_name}_of_match);
+MODULE_DEVICE_TABLE(of, $1_of_match);
 
-static const struct spi_device_id ${1:driver_name}_id[] = {
-	{ "${1:driver_name}", 0 },
+static const struct spi_device_id $1_id[] = {
+	{ "$1" },
 	{ }
 };
-MODULE_DEVICE_TABLE(spi, ${1:driver_name}_id);
+MODULE_DEVICE_TABLE(spi, $1_id);
 
-static struct spi_driver ${1:driver_name}_driver = {
+static struct spi_driver $1_driver = {
 	.driver = {
-		.name           = DRIVER_NAME,
-		.of_match_table = ${1:driver_name}_of_match,
+		.name           = "$1",
+		.of_match_table = $1_of_match,
 	},
-	.probe    = ${1:driver_name}_probe,
-	.remove   = ${1:driver_name}_remove,
-	.id_table = ${1:driver_name}_id,
+	.probe    = $1_probe,
+	.remove   = $1_remove,
+	.id_table = $1_id,
 };
+module_spi_driver($1_driver);
 
-module_spi_driver(${1:driver_name}_driver);
-
-MODULE_AUTHOR("${3:Abdul Sattar} <${4:abdul.linuxdev@gmail.com}>");
-MODULE_DESCRIPTION("${2:SPI driver for X device}");
-MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("$3 <$4>");
+MODULE_DESCRIPTION("$2");
+MODULE_LICENSE("GPL");
 $0
 endsnippet
 
@@ -473,114 +511,144 @@ endsnippet
 # ============================================================================
 
 # trigger: irqh
-# Request an IRQ with a handler — devm_ version (auto-freed on remove)
+# Hard IRQ handler (MMIO devices — fast, cannot sleep).
+# Flags 0: the trigger type (edge/level, polarity) comes from DT.
 snippet irqh "IRQ request + handler skeleton" b
-/* IRQ handler */
-static irqreturn_t ${1:driver_name}_irq_handler(int irq, void *dev_id)
+static irqreturn_t ${1:driver}_irq_handler(int irq, void *dev_id)
 {
-	struct ${1:driver_name}_priv *priv = dev_id;
+	struct $1_priv *priv = dev_id;
+	u32 status;
 
-	/* TODO: read status register to confirm this IRQ is ours */
-	/* TODO: clear the interrupt at the hardware level */
-	/* TODO: wake any waiting threads / schedule bottom half */
+	status = readl(priv->base + ${2:REG_IRQ_STATUS});
+	if (!status)
+		return IRQ_NONE;		/* shared line: not ours */
+
+	writel(status, priv->base + $2);	/* ack (write-1-to-clear) */
+	/* TODO: handle 'status' bits / complete() / wake_up() */
 
 	return IRQ_HANDLED;
 }
 
-/* In probe(): request the IRQ */
-ret = devm_request_irq(&pdev->dev, priv->irq,
-		       ${1:driver_name}_irq_handler,
-		       IRQF_${2:TRIGGER_RISING},
-		       DRIVER_NAME, priv);
-if (ret) {
-	dev_err(&pdev->dev, "failed to request IRQ %d: %d\n",
-		priv->irq, ret);
-	return ret;
-}
+/* In probe(): */
+ret = devm_request_irq(dev, priv->irq, $1_irq_handler, 0, dev_name(dev), priv);
+if (ret)
+	return dev_err_probe(dev, ret, "failed to request IRQ %d\n", priv->irq);
 $0
 endsnippet
 
 # trigger: irqth
-# Threaded IRQ handler (top half + bottom half)
-snippet irqth "Threaded IRQ handler (hard IRQ + thread)" b
-/* Hard IRQ — runs in interrupt context, must be fast */
-static irqreturn_t ${1:driver_name}_hard_irq(int irq, void *dev_id)
+# Threaded IRQ for devices behind I2C/SPI (the handler must sleep to talk to
+# the chip). NULL primary handler + IRQF_ONESHOT keeps the line masked until
+# the thread has cleared the source — without ONESHOT a level-triggered IRQ
+# (most sensors/PMICs) storms and locks up the CPU.
+snippet irqth "Threaded IRQ handler (I2C/SPI devices)" b
+static irqreturn_t ${1:driver}_irq_thread(int irq, void *dev_id)
 {
-	/* Acknowledge hardware interrupt, return IRQ_WAKE_THREAD */
-	return IRQ_WAKE_THREAD;
-}
+	struct $1_priv *priv = dev_id;
+	unsigned int status;
+	int ret;
 
-/* Threaded handler — runs in kernel thread context, can sleep */
-static irqreturn_t ${1:driver_name}_thread_irq(int irq, void *dev_id)
-{
-	struct ${1:driver_name}_priv *priv = dev_id;
+	/* Safe to sleep here — regmap over I2C/SPI */
+	ret = regmap_read(priv->regmap, ${2:REG_IRQ_STATUS}, &status);
+	if (ret || !status)
+		return IRQ_NONE;
 
-	/* Safe to sleep here — read registers, process data */
+	/* TODO: handle and clear the source ('status' bits) */
 	$0
 
 	return IRQ_HANDLED;
 }
 
 /* In probe(): */
-ret = devm_request_threaded_irq(&pdev->dev, priv->irq,
-				${1:driver_name}_hard_irq,
-				${1:driver_name}_thread_irq,
-				IRQF_${2:TRIGGER_RISING},
-				DRIVER_NAME, priv);
+ret = devm_request_threaded_irq(dev, client->irq, NULL, $1_irq_thread,
+				IRQF_ONESHOT, dev_name(dev), priv);
+if (ret)
+	return dev_err_probe(dev, ret, "failed to request IRQ %d\n", client->irq);
 endsnippet
 
 
 # ============================================================================
-# [8]  DEVICE TREE BINDING
+# [8]  DEVICE TREE NODES
 # ============================================================================
 
 # trigger: dtnode
-# DTS node for a platform device (paste into your .dts file)
+# MMIO platform device node. 'reg' cell count must match the PARENT bus's
+# #address-cells / #size-cells (arm64 SoC buses: usually 2/2 → <0x0 addr 0x0 size>;
+# arm32 or simple-bus with 1/1 → <addr size>).
 snippet dtnode "DTS device node for a platform device" b
-/* ${1:Peripheral name} — ${2:brief description} */
-${3:node_name}: ${3:node_name}@${4:base_address} {
-	compatible = "${5:vendor,driver-name}";
-	reg = <0x0 0x${4:base_address} 0x0 0x${6:size}>;
-	interrupts = <${7:GIC_SPI} ${8:irq_number} ${9:IRQ_TYPE_LEVEL_HIGH}>;
-	interrupt-parent = <&${10:gic}>;
-	clocks = <&${11:clk_controller} ${12:CLK_PERIPH}>;
-	clock-names = "${13:apb_clk}";
-	status = "${14:okay}";
+${1:label}: ${2:generic-name}@${3:10000000} {
+	compatible = "${4:vendor,device}";
+	reg = <${5:0x0 0x$3 0x0 0x${6:1000}}>;
+	interrupts = <GIC_SPI ${7:42} IRQ_TYPE_LEVEL_HIGH>;
+	clocks = <&${8:cru} ${9:CLK_ID}>;
+	resets = <&$8 ${10:SRST_ID}>;
+	status = "${11:disabled}";
 	$0
 };
 endsnippet
 
 # trigger: dti2c
-# DTS node for an I2C slave device
-snippet dti2c "DTS I2C slave device node" b
-/* ${1:Device name} on I2C bus */
-&${2:i2c0} {
-	${3:device_name}: ${3:device_name}@${4:address} {
-		compatible = "${5:vendor,device-name}";
-		reg = <0x${4:address}>;
-		${6:#interrupt-cells = <1>;}
-		${7:interrupt-parent = <&gpio>;}
-		${8:interrupts = <pin IRQ_TYPE_EDGE_FALLING>;}
-		status = "okay";
+# I2C device node, added to a bus from the board .dts.
+# Unit address = 7-bit address in hex without 0x (e.g. @48).
+snippet dti2c "DTS I2C device node" b
+&${1:i2c0} {
+	status = "okay";
+
+	${2:sensor}@${3:48} {
+		compatible = "${4:vendor,device}";
+		reg = <0x$3>;
+		interrupts-extended = <&${5:gpio1} ${6:5} ${7:IRQ_TYPE_LEVEL_LOW}>;
+		reset-gpios = <&${8:gpio1} ${9:6} GPIO_ACTIVE_LOW>;
+		vdd-supply = <&${10:vcc_3v3}>;
 		$0
 	};
 };
 endsnippet
 
 # trigger: dtspi
-# DTS node for an SPI slave device
-snippet dtspi "DTS SPI slave device node" b
-/* ${1:Device name} on SPI bus */
-&${2:spi0} {
-	${3:device_name}: ${3:device_name}@${4:0} {
-		compatible = "${5:vendor,device-name}";
-		reg = <${4:0}>;
-		spi-max-frequency = <${6:1000000}>;
-		${7:spi-cpol;}
-		${8:spi-cpha;}
-		status = "okay";
+# SPI device node. The SPI mode lives HERE (spi-cpol / spi-cpha), not in the
+# driver: mode 0 = neither, 1 = cpha, 2 = cpol, 3 = both.
+snippet dtspi "DTS SPI device node" b
+&${1:spi0} {
+	status = "okay";
+
+	${2:adc}@${3:0} {
+		compatible = "${4:vendor,device}";
+		reg = <$3>;			/* chip select */
+		spi-max-frequency = <${5:1000000}>;
+		${6:/* spi-cpol; spi-cpha;   (mode 3) */}
 		$0
 	};
+};
+endsnippet
+
+# trigger: dtgpio
+# GPIO consumer property (driver: devm_gpiod_get(dev, "name", ...)).
+snippet dtgpio "DTS GPIO consumer property" b
+${1:enable}-gpios = <&${2:gpio1} ${3:0} ${4:GPIO_ACTIVE_HIGH}>;
+$0
+endsnippet
+
+# trigger: dtpinctrl
+# pinctrl reference pair.
+snippet dtpinctrl "DTS pinctrl properties" b
+pinctrl-names = "default";
+pinctrl-0 = <&${1:uart2_pins}>;
+$0
+endsnippet
+
+# trigger: dtovl
+# Device tree overlay (.dtso) skeleton.
+snippet dtovl "DT overlay skeleton" b
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+&${1:i2c1} {
+	status = "okay";
+	$0
 };
 endsnippet
 
@@ -590,16 +658,16 @@ endsnippet
 # ============================================================================
 
 # trigger: pri
-# pr_info — general kernel log (no device context)
+# pr_info — general kernel log (no device context; pr_fmt adds the prefix)
 snippet pri "pr_info log message" b
-pr_info("${1:DRIVER}: ${2:message}\n"${3:, args});
+pr_info("${1:message}\n"${2:, args});
 $0
 endsnippet
 
 # trigger: pre
 # pr_err — kernel error log
 snippet pre "pr_err error message" b
-pr_err("${1:DRIVER}: ${2:error message}: %d\n", ${3:ret});
+pr_err("${1:error message}: %d\n", ${2:ret});
 $0
 endsnippet
 
@@ -617,8 +685,17 @@ dev_err(${1:dev}, "${2:error message}: %d\n", ${3:ret});
 $0
 endsnippet
 
+# trigger: deprobe
+# dev_err_probe — error return in probe(). Silent for -EPROBE_DEFER (records
+# the reason in /sys/kernel/debug/devices_deferred instead of spamming dmesg).
+snippet deprobe "return dev_err_probe(...)" b
+return dev_err_probe(${1:dev}, ${2:ret}, "${3:failed to ...}\n");
+$0
+endsnippet
+
 # trigger: devd
-# dev_dbg — debug message (only prints when DEBUG is defined or dynamic debug enabled)
+# dev_dbg — enable at runtime without rebuilding:
+#   echo 'file my_driver.c +p' > /sys/kernel/debug/dynamic_debug/control
 snippet devd "dev_dbg debug message (dynamic debug)" b
 dev_dbg(${1:dev}, "${2:debug message}\n"${3:, args});
 $0
@@ -632,20 +709,17 @@ $0
 endsnippet
 
 # trigger: dbg
-# pr_debug block — prints only when module is compiled with DEBUG or
-# dynamic debug is enabled for this file. Zero cost in production.
+# pr_debug with function/line (dynamic debug: +p as above)
 snippet dbg "pr_debug with file/line context" b
-pr_debug("%s:%d — ${1:message}\n", __func__, __LINE__${2:, args});
+pr_debug("%s:%d ${1:message}\n", __func__, __LINE__${2:, args});
 $0
 endsnippet
 
 # trigger: WARN
-# WARN_ON — prints stack trace if condition is true (debug assertion)
-snippet WARN "WARN_ON assertion with message" b
-if (WARN_ON(${1:condition})) {
-	dev_err(${2:dev}, "${3:unexpected condition reached}\n");
-	return ${4:-EINVAL};
-}
+# WARN_ON — prints a stack trace once per call site (debug assertion)
+snippet WARN "WARN_ON_ONCE assertion" b
+if (WARN_ON_ONCE(${1:condition}))
+	return ${2:-EINVAL};
 $0
 endsnippet
 
@@ -657,44 +731,53 @@ endsnippet
 # trigger: devm
 # devm_kzalloc — the standard way to allocate private driver data
 snippet devm "devm_kzalloc private data allocation" b
-${1:priv} = devm_kzalloc(${2:dev}, sizeof(*${1:priv}), GFP_KERNEL);
-if (!${1:priv})
+${1:priv} = devm_kzalloc(${2:dev}, sizeof(*$1), GFP_KERNEL);
+if (!$1)
 	return -ENOMEM;
 $0
 endsnippet
 
 # trigger: ofprop
-# of_property_read — read a DT property into a variable
-snippet ofprop "of_property_read_u32 from device tree" b
-ret = of_property_read_u32(${1:np}, "${2:property-name}", &${3:value});
-if (ret) {
-	dev_err(${4:dev}, "missing required DT property '${2:property-name}'\n");
-	return ret;
-}
+# device_property_read_u32 — works for DT and ACPI (fwnode API)
+snippet ofprop "device_property_read_u32 from firmware" b
+ret = device_property_read_u32(${1:dev}, "${2:property-name}", &${3:value});
+if (ret)
+	return dev_err_probe($1, ret, "missing '$2' property\n");
+$0
+endsnippet
+
+# trigger: ofpropopt
+# Optional property with a default value
+snippet ofpropopt "optional device property with default" b
+${1:value} = ${2:default};
+device_property_read_u32(${3:dev}, "${4:property-name}", &$1);
 $0
 endsnippet
 
 # trigger: mutex
-# mutex_lock / unlock pair with proper error handling
-snippet mutex "mutex_lock/unlock pair" b
+# guard(mutex) — the lock is released automatically at end of scope (6.5+).
+snippet mutex "scoped mutex guard" b
+guard(mutex)(&${1:priv}->${2:lock});
+$0
+endsnippet
+
+# trigger: mutexl
+# Classic mutex_lock / unlock pair
+snippet mutexl "mutex_lock/unlock pair" b
 mutex_lock(&${1:priv}->${2:lock});
-
 ${3:/* critical section */}
-
-mutex_unlock(&${1:priv}->${2:lock});
+mutex_unlock(&$1->$2);
 $0
 endsnippet
 
 # trigger: spinl
-# spin_lock_irqsave / spin_unlock_irqrestore
+# spin_lock_irqsave / spin_unlock_irqrestore (data shared with an IRQ handler)
 snippet spinl "spin_lock_irqsave / spin_unlock_irqrestore" b
 unsigned long flags;
 
 spin_lock_irqsave(&${1:priv}->${2:lock}, flags);
-
 ${3:/* critical section — cannot sleep here */}
-
-spin_unlock_irqrestore(&${1:priv}->${2:lock}, flags);
+spin_unlock_irqrestore(&$1->$2, flags);
 $0
 endsnippet
 
@@ -702,10 +785,8 @@ endsnippet
 # regmap_read — read a hardware register via regmap
 snippet regr "regmap_read register" b
 ret = regmap_read(${1:priv}->regmap, ${2:REG_NAME}, &${3:val});
-if (ret) {
-	dev_err(${1:priv}->dev, "failed to read ${2:REG_NAME}: %d\n", ret);
-	return ret;
-}
+if (ret)
+	return dev_err_probe($1->dev, ret, "failed to read $2\n");
 $0
 endsnippet
 
@@ -713,10 +794,8 @@ endsnippet
 # regmap_write — write a hardware register via regmap
 snippet regw "regmap_write register" b
 ret = regmap_write(${1:priv}->regmap, ${2:REG_NAME}, ${3:val});
-if (ret) {
-	dev_err(${1:priv}->dev, "failed to write ${2:REG_NAME}: %d\n", ret);
-	return ret;
-}
+if (ret)
+	return dev_err_probe($1->dev, ret, "failed to write $2\n");
 $0
 endsnippet
 
@@ -724,54 +803,77 @@ endsnippet
 # regmap_update_bits — set/clear specific bits in a register
 snippet regupd "regmap_update_bits — modify specific register bits" b
 ret = regmap_update_bits(${1:priv}->regmap, ${2:REG_NAME},
-			 ${3:MASK}, ${4:value});
-if (ret) {
-	dev_err(${1:priv}->dev, "failed to update ${2:REG_NAME}: %d\n", ret);
-	return ret;
-}
+			 ${3:MASK}, FIELD_PREP($3, ${4:value}));
+if (ret)
+	return dev_err_probe($1->dev, ret, "failed to update $2\n");
+$0
+endsnippet
+
+# trigger: regpoll
+# Poll a register until a bit is set (e.g. PLL lock, reset done) with timeout.
+snippet regpoll "regmap_read_poll_timeout" b
+ret = regmap_read_poll_timeout(${1:priv}->regmap, ${2:REG_STATUS}, ${3:val},
+			       ${4:$3 & STATUS_READY}, ${5:1000}, ${6:100000});
+if (ret)
+	return dev_err_probe($1->dev, ret, "timeout waiting for $2\n");
 $0
 endsnippet
 
 # trigger: waitq
-# wait_event_interruptible — block until condition is true
-snippet waitq "wait_event_interruptible wait queue" b
-/* Declaration (in priv struct): wait_queue_head_t ${1:wq}; */
-/* Initialization (in probe):    init_waitqueue_head(&priv->${1:wq}); */
-/* Wake up (in IRQ handler):     wake_up_interruptible(&priv->${1:wq}); */
+# wait_event_interruptible_timeout — block until condition or timeout
+snippet waitq "wait_event_interruptible_timeout" b
+/* priv struct:  wait_queue_head_t ${1:wq};                 */
+/* probe():      init_waitqueue_head(&priv->$1);           */
+/* IRQ handler:  wake_up_interruptible(&priv->$1);         */
 
-ret = wait_event_interruptible(${2:priv}->${1:wq}, ${3:condition});
-if (ret)
-	return -ERESTARTSYS;
+ret = wait_event_interruptible_timeout(${2:priv}->$1, ${3:condition},
+				       msecs_to_jiffies(${4:1000}));
+if (ret == 0)
+	return -ETIMEDOUT;
+if (ret < 0)
+	return ret;			/* -ERESTARTSYS: signal */
+$0
+endsnippet
+
+# trigger: compl
+# completion — wait for one event signalled from an IRQ handler
+snippet compl "completion wait with timeout" b
+/* priv struct: struct completion ${1:done}; probe(): init_completion(&priv->$1); */
+/* IRQ handler: complete(&priv->$1);                                             */
+
+reinit_completion(&${2:priv}->$1);
+/* TODO: start the hardware operation */
+if (!wait_for_completion_timeout(&$2->$1, msecs_to_jiffies(${3:100})))
+	return -ETIMEDOUT;
 $0
 endsnippet
 
 
 # ============================================================================
-# [11]  MEMORY MANAGEMENT
+# [11]  MEMORY MANAGEMENT / DMA
 # ============================================================================
 
 # trigger: iomap
-# ioremap — map physical MMIO address to virtual address
-snippet iomap "ioremap MMIO region" b
-${1:priv}->base = devm_ioremap(${2:dev}, ${3:phys_addr}, ${4:size});
-if (!${1:priv}->base) {
-	dev_err(${2:dev}, "failed to ioremap 0x%llx\n",
-		(unsigned long long)${3:phys_addr});
-	return -ENOMEM;
-}
+# Map an MMIO region from the DT 'reg' property (requests the region too)
+snippet iomap "devm_platform_ioremap_resource" b
+${1:priv}->base = devm_platform_ioremap_resource(${2:pdev}, ${3:0});
+if (IS_ERR($1->base))
+	return PTR_ERR($1->base);
 $0
 endsnippet
 
 # trigger: dma
-# DMA coherent allocation
-snippet dma "dma_alloc_coherent buffer" b
-${1:priv}->${2:buf} = dma_alloc_coherent(${3:dev}, ${4:size},
-				   &${1:priv}->${2:buf}_dma, GFP_KERNEL);
-if (!${1:priv}->${2:buf}) {
-	dev_err(${3:dev}, "failed to allocate DMA buffer\n");
+# DMA coherent buffer, device-managed (freed on unbind).
+# Set the DMA mask first: a 32-bit DMA master on a 64-bit SoC with RAM
+# above 4 GiB otherwise gets buffers it cannot reach.
+snippet dma "dma_set_mask + dmam_alloc_coherent" b
+ret = dma_set_mask_and_coherent(${1:dev}, DMA_BIT_MASK(${2:32}));
+if (ret)
+	return dev_err_probe($1, ret, "no suitable DMA mask\n");
+
+${3:priv}->${4:buf} = dmam_alloc_coherent($1, ${5:size}, &$3->$4_dma, GFP_KERNEL);
+if (!$3->$4)
 	return -ENOMEM;
-}
-/* Free with: dma_free_coherent(dev, size, priv->buf, priv->buf_dma); */
 $0
 endsnippet
 
@@ -783,10 +885,8 @@ endsnippet
 # trigger: ifnull
 # NULL check with error return
 snippet ifnull "NULL pointer check" b
-if (!${1:ptr}) {
-	pr_err("${2:error}: null pointer\n");
-	return ${3:-EINVAL};
-}
+if (!${1:ptr})
+	return ${2:-EINVAL};
 $0
 endsnippet
 
@@ -794,25 +894,23 @@ endsnippet
 # Return value check pattern — used constantly in kernel code
 snippet retcheck "Return value error check" b
 ret = ${1:function}(${2:args});
-if (ret) {
-	dev_err(${3:dev}, "${1:function} failed: %d\n", ret);
-	return ret;
-}
+if (ret)
+	return dev_err_probe(${3:dev}, ret, "$1 failed\n");
 $0
 endsnippet
 
 # trigger: bfield
-# Bit field operations using BIT(), GENMASK(), FIELD_GET()
+# Bit field operations using BIT(), GENMASK(), FIELD_GET/FIELD_PREP
 snippet bfield "Bit field macros — BIT, GENMASK, FIELD_GET/PREP" b
+#include <linux/bitfield.h>
+
 /* Single bit */
-#define ${1:REG}_${2:FLAG}_BIT		BIT(${3:0})
+#define ${1:REG}_${2:FLAG}		BIT(${3:0})
 
-/* Multi-bit field */
-#define ${1:REG}_${4:FIELD}_MASK	GENMASK(${5:7}, ${6:4})
-#define ${1:REG}_${4:FIELD}(x)		FIELD_PREP(${1:REG}_${4:FIELD}_MASK, (x))
+/* Multi-bit field: bits [${5:7}:${6:4}] */
+#define $1_${4:FIELD}_MASK	GENMASK($5, $6)
 
-/* Extract field value from register */
-/* u32 val = FIELD_GET(REG_FIELD_MASK, reg_value); */
+/* val = FIELD_GET($1_$4_MASK, reg);  reg |= FIELD_PREP($1_$4_MASK, val); */
 $0
 endsnippet
 
@@ -824,36 +922,97 @@ list_for_each_entry(${1:entry}, &${2:head}, ${3:list_member}) {
 }
 endsnippet
 
+# trigger: miscdev
+# misc device — the simplest way to get a /dev node (no cdev/class boilerplate)
+snippet miscdev "miscdevice registration" b
+#include <linux/miscdevice.h>
+#include <linux/fs.h>
+
+static const struct file_operations ${1:drv}_fops = {
+	.owner          = THIS_MODULE,
+	.open           = $1_open,
+	.release        = $1_release,
+	.read           = $1_read,
+	.write          = $1_write,
+	.unlocked_ioctl = $1_ioctl,
+};
+
+/* In probe(): creates /dev/$1 */
+priv->miscdev.minor  = MISC_DYNAMIC_MINOR;
+priv->miscdev.name   = "$1";
+priv->miscdev.fops   = &$1_fops;
+priv->miscdev.parent = dev;
+ret = misc_register(&priv->miscdev);
+if (ret)
+	return dev_err_probe(dev, ret, "misc_register failed\n");
+
+/* In remove(): */
+misc_deregister(&priv->miscdev);
+$0
+endsnippet
+
 # trigger: cdev
-# character device registration skeleton
+# Character device with its own major number and class (6.4+ class_create).
 snippet cdev "Character device (cdev) registration" b
 #include <linux/cdev.h>
+#include <linux/device.h>
 #include <linux/fs.h>
 
 static dev_t ${1:drv}_devno;
-static struct cdev ${1:drv}_cdev;
-static struct class *${1:drv}_class;
+static struct cdev $1_cdev;
+static struct class *$1_class;
 
-static const struct file_operations ${1:drv}_fops = {
-	.owner   = THIS_MODULE,
-	.open    = ${1:drv}_open,
-	.release = ${1:drv}_release,
-	.read    = ${1:drv}_read,
-	.write   = ${1:drv}_write,
-	.unlocked_ioctl = ${1:drv}_ioctl,
+static const struct file_operations $1_fops = {
+	.owner          = THIS_MODULE,
+	.open           = $1_open,
+	.release        = $1_release,
+	.read           = $1_read,
+	.write          = $1_write,
+	.unlocked_ioctl = $1_ioctl,
 };
 
-/* In init/probe: */
-ret = alloc_chrdev_region(&${1:drv}_devno, 0, 1, "${1:drv}");
-cdev_init(&${1:drv}_cdev, &${1:drv}_fops);
-ret = cdev_add(&${1:drv}_cdev, ${1:drv}_devno, 1);
-${1:drv}_class = class_create(THIS_MODULE, "${1:drv}");
-device_create(${1:drv}_class, NULL, ${1:drv}_devno, NULL, "${1:drv}");
+static int __init $1_init(void)
+{
+	struct device *dev;
+	int ret;
 
-/* In exit/remove: */
-device_destroy(${1:drv}_class, ${1:drv}_devno);
-class_destroy(${1:drv}_class);
-cdev_del(&${1:drv}_cdev);
-unregister_chrdev_region(${1:drv}_devno, 1);
+	ret = alloc_chrdev_region(&$1_devno, 0, 1, "$1");
+	if (ret)
+		return ret;
+
+	cdev_init(&$1_cdev, &$1_fops);
+	ret = cdev_add(&$1_cdev, $1_devno, 1);
+	if (ret)
+		goto err_region;
+
+	$1_class = class_create("$1");
+	if (IS_ERR($1_class)) {
+		ret = PTR_ERR($1_class);
+		goto err_cdev;
+	}
+
+	dev = device_create($1_class, NULL, $1_devno, NULL, "$1");
+	if (IS_ERR(dev)) {
+		ret = PTR_ERR(dev);
+		goto err_class;
+	}
+	return 0;
+
+err_class:
+	class_destroy($1_class);
+err_cdev:
+	cdev_del(&$1_cdev);
+err_region:
+	unregister_chrdev_region($1_devno, 1);
+	return ret;
+}
+
+static void __exit $1_exit(void)
+{
+	device_destroy($1_class, $1_devno);
+	class_destroy($1_class);
+	cdev_del(&$1_cdev);
+	unregister_chrdev_region($1_devno, 1);
+}
 $0
 endsnippet

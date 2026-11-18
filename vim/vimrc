@@ -1,203 +1,340 @@
 " ============================================================================
-"            
+"
 "            ██╗   ██╗██╗███╗   ███╗██████╗  ██████╗
 "            ██║   ██║██║████╗ ████║██╔══██╗██╔════╝
 "            ██║   ██║██║██╔████╔██║██████╔╝██║
 "            ╚██╗ ██╔╝██║██║╚██╔╝██║██╔══██╗██║
 "             ╚████╔╝ ██║██║ ╚═╝ ██║██║  ██║╚██████╗
 "              ╚═══╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝
-"  
-"  File name   : vimrc 
+"
+"  File name   : vimrc
 "  Author      : Abdul Sattar <abdul.linuxdev@gmail.com>
 "  Created On  : February 2025
-"  Repository  : https://github.com/A4sa/
+"  Repository  : https://github.com/A4sa/dotforge.git
 "  Description : A professional and optimized Vim configuration tailored for
 "                embedded systems development.
 "
+"  NOTE: in Vim a '"' after a :map command is NOT a comment — it becomes part
+"        of the mapping. Keep comments on their own line above mappings.
+"
 " ============================================================================
-
-"Source other configuration files
-source $HOME/.vim/plugin_config.vim             " Plugin for vim
-source $HOME/.vim/key_mapping.vim        " Key mapping for vim   
-
 
 " ========================================================================
 "   [1] Core VIM Behavior
 " ========================================================================
-set nocompatible                    " Not compatible with Acient vim
-filetype on                         " Enable filetype detection
-filetype indent on                  " Enable filetype-specific indenting
-filetype plugin on                  " Enable filetype-specific plugins
+set nocompatible                    " Must come first — it resets other options
+filetype plugin indent on           " Filetype detection + plugins + indenting
 syntax enable                       " Enable syntax highlighting
+
+" One augroup for every autocmd in vimrc. 'autocmd!' clears it on re-source,
+" so ':source $MYVIMRC' never stacks duplicate autocmds.
+augroup dotforge
+  autocmd!
+augroup END
+
+" Source other configuration files (leader is set in key_mapping.vim, so it
+" must be sourced before any plugin creates <Leader> mappings).
+source $HOME/.vim/key_mapping.vim
+source $HOME/.vim/plugin_config.vim
 
 "========================================================================
 "  [2]  File and Buffer Management
-"========================================================================  
+"========================================================================
 set hidden                          " Allow buffer switching without saving
-set confirm                         " Ask for confirmation when :q 
-set nobackup                        " Nobackup the file
-set nowritebackup
-set noswapfile                      " not create .swap file
+set confirm                         " Ask instead of failing on :q with changes
+set autoread                        " Reload files changed outside Vim (git checkout, codegen)
+set encoding=utf-8
+set fileformats=unix,dos            " Prefer LF; still open CRLF vendor files
+
+" Keep swap/backup/undo files — but in ~/.vim, never next to the source.
+" Swap files let you recover after an SSH drop or a crashed terminal.
+" The trailing '//' encodes the full path in the file name (no collisions).
+for s:dir in ['undodir', 'swap', 'backup']
+  if !isdirectory(expand('~/.vim/' . s:dir))
+    call mkdir(expand('~/.vim/' . s:dir), 'p', 0700)
+  endif
+endfor
+set directory=~/.vim/swap//
+set backupdir=~/.vim/backup//
+set nobackup writebackup            " Backup only while writing, then delete it
+set undofile                        " Persistent undo across sessions
+set undodir=~/.vim/undodir//
+set undolevels=5000
+
+" Re-check files on disk when focusing Vim or entering a buffer
+" (tmux 'focus-events on' forwards FocusGained).
+autocmd dotforge FocusGained,BufEnter,CursorHold * silent! checktime
+
+" Re-open files at the last cursor position.
+autocmd dotforge BufReadPost *
+  \ if line("'\"") >= 1 && line("'\"") <= line('$') && &filetype !~# 'commit'
+  \ |   execute "normal! g`\""
+  \ | endif
+
+" Large files (dmesg dumps, System.map, logs, generated headers): turn off the
+" expensive features so Vim stays responsive.
+autocmd dotforge BufReadPre *
+  \ if getfsize(expand('<afile>')) > 10 * 1024 * 1024
+  \ |   setlocal syntax=off noundofile noswapfile foldmethod=manual
+  \ | endif
 
 "======================================================================
 "  [3]  User Interface (UI) Settings
-"======================================================================  
+"======================================================================
 set number                          " Show line numbers in the gutter
 set relativenumber                  " Show relative line numbers
-"set cursorline                      " Highlight the current line
 set scrolloff=8                     " Keep 8 lines visible above/below cursor
 set sidescrolloff=8                 " Keep 8 columns visible on the sides
 set ruler                           " Show the cursor position
 set showcmd                         " Show incomplete commands
-set showmode                        " Show current mode
+set noshowmode                      " airline already shows the mode
 set showmatch                       " Highlight matching brackets
-set laststatus=2                    " Always show status line (0=never, 1=only with splits, 2=alway)
-set title                           " Show filename in terminal barr
-set cmdheight=2                     " Give more space for displaying messages
-set encoding=UTF-8                  " Use UTF-8 encoding
-set background=dark                 " Use 'light' & 'dark'
-"set colorcolumn=80                 " Highlight column 80
+set laststatus=2                    " Always show status line
+set title                           " Show filename in terminal title
+set cmdheight=1
+set signcolumn=yes                  " Stable gutter: gitgutter/LSP signs don't shift text
+set synmaxcol=300                   " Don't syntax-highlight huge lines (logs, hex dumps)
+set lazyredraw                      " Don't redraw while running macros
+set background=dark
+
+" Make tabs vs spaces and trailing whitespace visible — essential when a
+" kernel patch must use tabs and a vendor file uses spaces.
+set list
+set listchars=tab:»\ ,trail:·,nbsp:␣,extends:›,precedes:‹
 
 " =====================================================================
-"  [4]  Colors and Terminal Compatibility 
-" ===================================================================== 
-set t_Co=256                        " Force 256 colors for terminal compatibility
+"  [4]  Colors and Terminal Compatibility
+" =====================================================================
+" True colour when the terminal supports it (GNOME Terminal, Alacritty,
+" kitty, tmux with RGB). The t_8f/t_8b lines are needed inside tmux.
+if has('termguicolors') && ($COLORTERM ==# 'truecolor' || $COLORTERM ==# '24bit' || exists('$TMUX'))
+  let &t_8f = "\<Esc>[38;2;%lu;%lu;%lum"
+  let &t_8b = "\<Esc>[48;2;%lu;%lu;%lum"
+  set termguicolors
+endif
+" The colorscheme itself is applied in plugin_config.vim (gruvbox).
 
+" Use the system clipboard only when one is reachable. Over plain SSH (no
+" $DISPLAY) Vim would otherwise try to connect to X on every yank.
+if has('clipboard') && (exists('$DISPLAY') || exists('$WAYLAND_DISPLAY'))
+  set clipboard=unnamedplus
+endif
 
-"colorscheme desert                 " Restore syntax
-"         colorscheme desert      (built-in, no plugin)
-"         colorscheme gruvbox     (warm, low-fatigue for long sessions)
-"         colorscheme tokyonight  (high contrast, good for DTS/C
-         
-set clipboard=unnamedplus           " Clipboard btw editor
+set mouse=a                         " Mouse: click to place cursor, scroll, resize splits
+if !has('nvim') && exists('&ttymouse')
+  set ttymouse=sgr                  " Works in wide terminals and inside tmux
+endif
 
 " ====================================================================
 "  [5]  Tab and Indentation Setting
-" ==================================================================== 
-set tabstop=4                   " Number of spaces that a <Tab> in the file counts for
-set softtabstop=4               " Number of spaces to use for each step of (auto)indent
-set shiftwidth=4                " Number of spaces to use for autoindent
+" ====================================================================
+" Defaults for application / BSP userspace code. Kernel, U-Boot and
+" Makefiles get hard tabs — see section [13].
+set tabstop=4                   " Width a <Tab> character is displayed as
+set softtabstop=4               " Spaces inserted for <Tab> while editing
+set shiftwidth=4                " Width of an indent level (>>, <<, autoindent)
 set expandtab                   " Use spaces instead of tabs
-set smartindent                 " Auto-indent
-set autoindent                  " Automatically indents new lines (loop, funcation)
-set cindent                     " Enable C-style indentation
-set textwidth=80                " Wrap text to the next line at 80 characters
+set autoindent                  " Keep the indent of the previous line
+set cindent                     " C-style indentation (smartindent is redundant with it)
+set cinoptions=:0,l1,t0,g0,(0   " Linux style: case labels at switch level, no return-type indent
+set textwidth=80                " Hard-wrap comments at 80 characters
+
+" Numbers: Ctrl-A / Ctrl-X increment hex and binary, never treat 007 as octal.
+set nrformats=bin,hex
 
 " ===================================================================
 "  [6]  Search Settings
-" =================================================================== 
+" ===================================================================
 set ignorecase                  " Ignore case when searching
-set smartcase                   " Override ignorecase if search contains uppercase letters
+set smartcase                   " Case-sensitive if the pattern has uppercase
 set incsearch                   " Show search results as you type
 set hlsearch                    " Highlight all search results
+
+" :grep uses ripgrep when available — respects .gitignore, much faster.
+if executable('rg')
+  set grepprg=rg\ --vimgrep\ --smart-case
+  set grepformat=%f:%l:%c:%m
+endif
 
 " ===================================================================
 "  [7]  Command Line Setting ---> :e
 " ===================================================================
-set wildmenu                          " Enable graphical tab-completion memu
-set wildmode=longest:full,full        " Enable tab completion menu
-set wildignore=*.o,*.obj,*.ko,*.d,*.dtb,*.swp,*.bak,*.pyc,*.class
-"   longest:full — first Tab completes to the longest common string
-"                  and opens the menu simultaneously.
-"   full         — subsequent Tabs cycle through all matches in the menu
+set wildmenu                          " Enable graphical tab-completion menu
+set wildmode=longest:full,full        " Complete longest common part, then cycle
+set wildignorecase
+set wildignore=*.o,*.obj,*.ko,*.mod,*.mod.o,*.a,*.so,*.d,*.dtb,*.dtbo
+set wildignore+=*.swp,*.bak,*.pyc,*.class,*/.git/*,*/__pycache__/*
+set wildignore+=*.img,*.bin,*.elf,*.cpio,*.gz,*.xz,*.zst
+set history=1000
 
 " ==================================================================
 "  [8]  Code Folding Setting
-" ================================================================== 
+" ==================================================================
 set foldenable               " Enable folding
+set foldmethod=indent        " Cheap and works for every filetype
 set foldlevelstart=99        " Start with all folds open
-" TIP:  Useful fold commands:
-"         za  — toggle the fold under cursor
-"         zM  — close all folds in the file
-"         zR  — open all folds in the file
-"         zo  — open fold under cursor
-"         zc  — close fold under cursor
+" TIP:  za toggle · zM close all · zR open all · zo/zc open/close one
 
 " ================================================================
 "  [9]  Auto-Completion  -----> Ctrl + N/P
 " ================================================================
 set completeopt=menu,menuone,noselect,noinsert
 set shortmess+=c
-"   menu     — show the popup menu when there are multiple matches
-"   menuone  — show the popup even when there is only one match
-"              (so you can see what's being completed)
-"   noselect — don't pre-select any entry; you choose manually
-"   noinsert — don't insert anything until you actively select an entry
+set complete-=i                 " Don't scan every #include — slow in kernel trees
 
 " ==============================================================
 "  [10] Splits and Windows Setting
 " ==============================================================
 set splitright                      " Open vertical splits to the right
 set splitbelow                      " Open horizontal splits below
-set backspace=indent,eol,start      " Improve backspace behavior
+set backspace=indent,eol,start      " Backspace over everything in insert mode
 
 " =============================================================
 "  [11]  Performance Tuning
 " =============================================================
-set timeoutlen=500                  " Faster key sequence timeout
-set updatetime=300                  " Faster update time for plugins
+set timeoutlen=500                  " Time to complete a mapped key sequence
+set ttimeoutlen=10                  " Esc is instant (important inside tmux)
+set updatetime=300                  " Faster CursorHold (gitgutter, checktime)
 
 " =============================================================
-"  [12]  CScope Integration 
+"  [12]  CScope Integration
 " ctags tells you WHERE a symbol is defined.
-" cscope tells you everything about a symbol:
-"   - where it is defined
-"   - where it is called from
-"   - where it is assigned
-"   - which files include a given header
-"   - which functions call a given function
+" cscope tells you everything about a symbol: callers, assignments,
+" includers, text matches.
+" Build the database with: mkidx   (shell function from dotforge)
 " =============================================================
-if has('cscope')
-  set cscopetag " Use cscope tags
-  set csprg=/usr/bin/cscope
-  set csto=0  " Search cscope databases in this order:
-  set cst
-  set nocsverb
+if has('cscope') && executable('cscope')
+  let &csprg = exepath('cscope')
+  set cscopetag                     " :tag and Ctrl-] also search cscope
+  set csto=0                        " cscope DB first, then tags file
+  set nocscopeverbose
+  " Send multi-result queries to the quickfix list instead of a pager.
+  set cscopequickfix=s-,c-,d-,i-,t-,e-,a-
 
-  if filereadable("cscope.out")
-    cs add cscope.out
-  elseif $CSCOPE_DB != ""
-    " Also respect the CSCOPE_DB environment variable if set in your shell.
-    cs add $CSCOPE_DB
-  endif
+  " Find cscope.out in the current directory or any parent, so opening
+  " vim from drivers/gpio/ still connects to the kernel root database.
+  function! s:CscopeConnect() abort
+    let l:db = findfile('cscope.out', '.;')
+    if !empty(l:db)
+      let l:db = fnamemodify(l:db, ':p')
+      silent! execute 'cs add' fnameescape(l:db) fnameescape(fnamemodify(l:db, ':h'))
+    elseif !empty($CSCOPE_DB) && filereadable($CSCOPE_DB)
+      silent! execute 'cs add' fnameescape($CSCOPE_DB)
+    endif
+  endfunction
+  call s:CscopeConnect()
 
+  " :CscopeReload — rebuild in the shell (mkidx), then re-attach here.
+  command! CscopeReload silent! cs reset | call s:CscopeConnect() | echo 'cscope reconnected'
 endif
-  
+" Ctags: search for a 'tags' file upward to the filesystem root.
+set tags=./tags;,tags;
+
 " ==============================================================
 "  [13]  FileType Specific Rules
 " ==============================================================
 
-" ---- C / C++ ---
-autocmd FileType c setlocal tabstop=4 shiftwidth=4 expandtab
-autocmd BufRead,BufNewFile ~/kernel/*.[ch] setlocal tabstop=8 shiftwidth=8 noexpandtab
-autocmd BufRead,BufNewFile *.ino set filetype=cpp
+" ---- Kernel-style tree detection ----
+" Linux, U-Boot, Zephyr, Barebox, OP-TEE, TF-A... all use 8-wide hard tabs.
+" Instead of hard-coding ~/kernel/, detect the project root by its marker
+" files (searched upward from the file). Set g:dotforge_kernel_style = 0
+" in ~/.vimrc.local to turn this off.
+function! s:IsKernelStyleTree() abort
+  if !get(g:, 'dotforge_kernel_style', 1)
+    return 0
+  endif
+  let l:dir = expand('%:p:h')
+  " Linux / U-Boot / Barebox: Kbuild + MAINTAINERS at the top level
+  let l:kbuild = findfile('Kbuild', l:dir . ';')
+  if !empty(l:kbuild) && filereadable(fnamemodify(l:kbuild, ':h') . '/MAINTAINERS')
+    return 1
+  endif
+  " Out-of-tree kernel module: a Kbuild file, or a Makefile with obj-m
+  let l:mk = findfile('Makefile', l:dir . ';')
+  if !empty(l:mk) && fnamemodify(l:mk, ':h') ==# l:dir
+    for l:line in readfile(l:mk, '', 50)
+      if l:line =~# '^\s*obj-[my$]'
+        return 1
+      endif
+    endfor
+  endif
+  " Explicit opt-in marker for vendor BSP trees: touch .kernel-style
+  return !empty(findfile('.kernel-style', l:dir . ';'))
+endfunction
 
-autocmd BufRead,BufNewFile *.c setlocal commentstring=/*\ %s\ */
-autocmd BufRead,BufNewFile *.h setlocal commentstring=/*\ %s\ */
+function! s:ApplyKernelStyle() abort
+  " Detection walks the filesystem — do it once per buffer, but re-apply the
+  " settings every time (FileType fires again on :e and :set ft=).
+  if !exists('b:dotforge_kernel_style')
+    let b:dotforge_kernel_style = s:IsKernelStyleTree()
+  endif
+  if b:dotforge_kernel_style
+    setlocal tabstop=8 softtabstop=0 shiftwidth=8 noexpandtab
+    setlocal textwidth=100 colorcolumn=101
+  endif
+endfunction
 
-if executable('clang-format')
-  autocmd BufWritePre *.c,*.h :silent! FormatWrite
-endif
+" ---- C / C++ / assembly ----
+autocmd dotforge FileType c,cpp setlocal tabstop=4 shiftwidth=4 expandtab commentstring=/*\ %s\ */
+autocmd dotforge FileType c,cpp,asm,dts,kconfig,make call s:ApplyKernelStyle()
+
+" Opt-in clang-format on save. Off by default: reformatting whole vendor or
+" kernel files on save produces huge unrelated diffs. When enabled, it only
+" runs if the project has a .clang-format file. Toggle with :FormatOnSave.
+let g:dotforge_format_on_save = get(g:, 'dotforge_format_on_save', 0)
+function! s:FormatOnSave() abort
+  if g:dotforge_format_on_save && executable('clang-format')
+        \ && !empty(findfile('.clang-format', expand('%:p:h') . ';'))
+        \ && exists(':Autoformat') == 2
+    silent! Autoformat
+  endif
+endfunction
+autocmd dotforge BufWritePre *.c,*.h,*.cpp,*.hpp call s:FormatOnSave()
+command! FormatOnSave let g:dotforge_format_on_save = !g:dotforge_format_on_save
+      \ | echo 'clang-format on save: ' . (g:dotforge_format_on_save ? 'ON' : 'OFF')
 
 " ---- Python ----
-autocmd FileType python setlocal tabstop=4 shiftwidth=4 expandtab
+autocmd dotforge FileType python setlocal tabstop=4 shiftwidth=4 expandtab textwidth=88
 
-" -- Makefiles ---
-autocmd FileType make setlocal tabstop=4 shiftwidth=4 noexpandtab
+" ---- Shell ----
+autocmd dotforge FileType sh,bash setlocal tabstop=4 shiftwidth=4 expandtab
 
-" --- Kconfig -----
-autocmd BufRead,BufNewFile Kconfig*,*/Kconfig setfiletype kconfig
-autocmd FileType kconfig setlocal tabstop=1 shiftwidth=1 noexpandtab
+" ---- Makefiles: recipes REQUIRE hard tabs ----
+autocmd dotforge FileType make setlocal tabstop=8 shiftwidth=8 softtabstop=0 noexpandtab
 
-" --- Device Tree ---
-autocmd BufRead,BufNewFile *.dts,*.dtsi setfiletype dts
-autocmd FileType dts setlocal tabstop=4 shiftwidth=4 noexpandtab
-autocmd BufRead,BufNewFile *.dts,*.dtsi setlocal commentstring=/*\ %s\ */
+" ---- Kconfig: tab indent, help text is tab + 2 spaces ----
+autocmd dotforge BufRead,BufNewFile Kconfig*,*/Kconfig* setfiletype kconfig
+autocmd dotforge FileType kconfig setlocal tabstop=8 shiftwidth=8 noexpandtab
 
-" --- Markdown -----
-autocmd BufRead,BufNewFile *.md set filetype=markdown
-autocmd FileType markdown setlocal spell wrap linebreak
+" ---- Kernel / Buildroot config fragments ----
+autocmd dotforge BufRead,BufNewFile *_defconfig,*.config,.config setfiletype conf
 
-" --- Arduino ---
-autocmd BufRead,BufNewFile *.ino setfiletype cpp
+" ---- Device Tree: .dts .dtsi .dtso (overlays) and .its (FIT image source) ----
+autocmd dotforge BufRead,BufNewFile *.dts,*.dtsi,*.dtso,*.its setfiletype dts
+autocmd dotforge FileType dts setlocal tabstop=8 shiftwidth=8 noexpandtab commentstring=/*\ %s\ */
 
+" ---- Linker scripts / assembly ----
+autocmd dotforge BufRead,BufNewFile *.ld,*.lds,*.lds.S setfiletype ld
+autocmd dotforge BufRead,BufNewFile *.S setfiletype asm
+
+" ---- Yocto / BitBake (no built-in syntax; shell-like is close enough) ----
+autocmd dotforge BufRead,BufNewFile *.bb,*.bbappend,*.bbclass setlocal filetype=sh tabstop=4 shiftwidth=4 expandtab
+
+" ---- Arduino ----
+autocmd dotforge BufRead,BufNewFile *.ino setfiletype cpp
+
+" ---- Markdown ----
+autocmd dotforge FileType markdown setlocal spell wrap linebreak
+
+" ---- Git commit messages: kernel-style 72-column wrap ----
+autocmd dotforge FileType gitcommit setlocal spell textwidth=72 colorcolumn=73
+
+" ---- Quickfix always spans the full width at the bottom ----
+autocmd dotforge FileType qf wincmd J
+
+" ==============================================================
+"  [14]  Machine-local overrides (not in the repo)
+" ==============================================================
+if filereadable(expand('~/.vimrc.local'))
+  source ~/.vimrc.local
+endif

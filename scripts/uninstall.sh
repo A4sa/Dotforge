@@ -2,9 +2,9 @@
 # ============================================================================
 #  File name   : uninstall.sh
 #  Author      : Abdul Sattar <abdul.linuxdev@gmail.com>
-#  Repository  : https://github.com/A4sa/Dotforge.git
-#  Description : Remove all files installed by Dotforge and restore backups
-#                if they exist.
+#  Repository  : https://github.com/A4sa/dotforge.git
+#  Description : Remove everything dotforge installed and optionally restore
+#                your original files from a backup.
 #
 #  USAGE
 #  -----
@@ -12,24 +12,17 @@
 #
 #  WHAT THIS SCRIPT REMOVES
 #  ------------------------
-#    ~/.vimrc
-#    ~/.vim/plugin_config.vim
-#    ~/.vim/key_mapping.vim
-#    ~/.vim/UltiSnips/c.snippets
-#    ~/.vim/UltiSnips/python.snippets
-#    ~/.vim/undodir/
-#    ~/.vim/plugged/          (installed plugins)
-#    ~/.vim/autoload/plug.vim (vim-plug)
-#    ~/.tmux.conf
-#    ~/.bash_aliases
-#    ~/.bash_functions
-#    Dotforge loader block from ~/.bashrc
+#    Symlinks that point into this repo (~/.vimrc, ~/.tmux.conf,
+#      ~/.vim/*.vim, ~/.vim/UltiSnips/*.snippets) — never a real file
+#    ~/.vim/plugged/ and ~/.vim/autoload/plug.vim   (asks first)
+#    The marked dotforge block in ~/.bashrc         (nothing else is touched)
 #
 #  WHAT THIS SCRIPT DOES NOT REMOVE
 #  ---------------------------------
-#    ~/.bash_local            (your private machine config — never touched)
-#    The Dotforge repo itself (just rm -rf Dotforge/ manually if needed)
-#    System packages (vim, tmux, fzf etc — installed separately)
+#    ~/.bash_local            (your private machine config)
+#    ~/.vim/undodir, swap     (your undo history and swap files)
+#    The dotforge repo itself (rm -rf it manually if needed)
+#    System packages
 #
 # ============================================================================
 
@@ -38,110 +31,125 @@ set -euo pipefail
 RESET='\033[0m'; BOLD='\033[1m'
 GREEN='\033[0;32m'; YELLOW='\033[0;33m'; CYAN='\033[0;36m'; RED='\033[0;31m'
 
-info()    { echo -e "${CYAN}[Dotforge]${RESET} $*"; }
-success() { echo -e "${GREEN}[Dotforge]${RESET} $*"; }
-warn()    { echo -e "${YELLOW}[Dotforge]${RESET} $*"; }
-error()   { echo -e "${RED}[Dotforge] ERROR:${RESET} $*" >&2; exit 1; }
+info()    { echo -e "${CYAN}[dotforge]${RESET} $*"; }
+success() { echo -e "${GREEN}[dotforge]${RESET} $*"; }
+warn()    { echo -e "${YELLOW}[dotforge]${RESET} $*"; }
+error()   { echo -e "${RED}[dotforge] ERROR:${RESET} $*" >&2; exit 1; }
 step()    { echo -e "\n${BOLD}── $* ──────────────────────────────────────${RESET}"; }
 
-BACKUP_BASE="$HOME/.Dotforge_backup"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOTFORGE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEST_BASHRC="$HOME/.bashrc"
+BASHRC_BEGIN="# >>> dotforge >>>"
+BASHRC_END="# <<< dotforge <<<"
+
+# Current backup location, plus the one used by older versions.
+BACKUP_BASES=("$HOME/.dotforge_backup" "$HOME/.Dotforge_backup")
 
 
 # ── Confirmation ──────────────────────────────────────────────────────────────
 
 echo ""
-echo -e "${BOLD}Dotforge — Uninstaller${RESET}"
+echo -e "${BOLD}dotforge — Uninstaller${RESET}"
 echo -e "───────────────────────"
 echo ""
-warn "This will remove all Dotforge config files from your home directory."
-warn "Your ~/.bash_local will NOT be touched."
+warn "This removes dotforge's links and its ~/.bashrc block."
+warn "Your ~/.bash_local and undo history are NOT touched."
 echo ""
-read -rp "Are you sure you want to uninstall Dotforge? [y/N] " confirm
+read -rp "Are you sure you want to uninstall dotforge? [y/N] " confirm
 [[ "$confirm" =~ ^[Yy]$ ]] || { info "Uninstall cancelled."; exit 0; }
-echo ""
 
 
-# ── Remove helper ─────────────────────────────────────────────────────────────
+# ── Step 1: Remove links that point into the repo ─────────────────────────────
 
-remove_file() {
+step "Removing config links"
+
+# Remove a path only if it is a symlink into this repo — a real file there
+# is yours (or a restored backup) and is left alone.
+remove_link() {
     local target="$1"
-    if [ -e "$target" ] || [ -L "$target" ]; then
-        rm -rf "$target"
-        success "Removed: $target"
-    else
-        info "Not found (skipping): $target"
+    if [ -L "$target" ]; then
+        case "$(readlink -f "$target")" in
+            "$DOTFORGE_ROOT"/*)
+                rm -f "$target"
+                success "Removed: ${target/#$HOME/\~}"
+                return ;;
+        esac
+        info "Not a dotforge link (kept): ${target/#$HOME/\~}"
+    elif [ -e "$target" ]; then
+        info "Real file, not a dotforge link (kept): ${target/#$HOME/\~}"
     fi
 }
 
+for f in .vimrc .tmux.conf .vim/plugin_config.vim .vim/key_mapping.vim \
+         .vim/UltiSnips/c.snippets .vim/UltiSnips/python.snippets \
+         .vim/UltiSnips/make.snippets; do
+    remove_link "$HOME/$f"
+done
 
-# ── Step 1: Remove Vim config files ───────────────────────────────────────────
-
-step "Removing Vim config"
-
-remove_file "$HOME/.vimrc"
-remove_file "$HOME/.vim/plugin_config.vim"
-remove_file "$HOME/.vim/key_mapping.vim"
-remove_file "$HOME/.vim/UltiSnips/c.snippets"
-remove_file "$HOME/.vim/UltiSnips/python.snippets"
-remove_file "$HOME/.vim/undodir"
-remove_file "$HOME/.vim/plugged"
-remove_file "$HOME/.vim/autoload/plug.vim"
-
-
-# ── Step 2: Remove tmux config ────────────────────────────────────────────────
-
-step "Removing tmux config"
-remove_file "$HOME/.tmux.conf"
-
-
-# ── Step 3: Remove shell config files ─────────────────────────────────────────
-
-step "Removing shell config"
-remove_file "$HOME/.bash_aliases"
-remove_file "$HOME/.bash_functions"
-
-
-# ── Step 4: Remove Dotforge block from ~/.bashrc ──────────────────────────────
-
-step "Cleaning ~/.bashrc"
-
-if grep -qF "# Dotforge" "$DEST_BASHRC" 2>/dev/null; then
-    # Remove the Dotforge block — from the marker line to the fi line after it
-    sed -i '/# Dotforge/,/^fi$/d' "$DEST_BASHRC"
-    # Also remove any blank line left behind just before the block
-    sed -i '/^$/N;/^\n$/d' "$DEST_BASHRC"
-    success "Dotforge loader removed from ~/.bashrc"
-else
-    info "No Dotforge block found in ~/.bashrc — skipping."
+echo ""
+read -rp "  Also remove Vim plugins (~/.vim/plugged, vim-plug)? [y/N] " rm_plugins
+if [[ "$rm_plugins" =~ ^[Yy]$ ]]; then
+    rm -rf "$HOME/.vim/plugged" "$HOME/.vim/autoload/plug.vim"
+    success "Removed Vim plugins."
 fi
 
 
-# ── Step 5: Restore backups (optional) ────────────────────────────────────────
+# ── Step 2: Remove the dotforge block from ~/.bashrc ──────────────────────────
+
+step "Cleaning ~/.bashrc"
+
+if [ -f "$DEST_BASHRC" ] && grep -qF "$BASHRC_BEGIN" "$DEST_BASHRC"; then
+    cp -a "$DEST_BASHRC" "$DEST_BASHRC.dotforge-uninstall.bak"
+    sed -i "/^${BASHRC_BEGIN}\$/,/^${BASHRC_END}\$/d" "$DEST_BASHRC"
+    success "dotforge block removed (previous copy: ~/.bashrc.dotforge-uninstall.bak)"
+elif [ -f "$DEST_BASHRC" ] && grep -q '^# Dotforge — load developer workspace' "$DEST_BASHRC"; then
+    cp -a "$DEST_BASHRC" "$DEST_BASHRC.dotforge-uninstall.bak"
+    sed -i '/^# Dotforge — load developer workspace$/,/^fi$/d' "$DEST_BASHRC"
+    success "Old-style dotforge block removed."
+else
+    info "No dotforge block found in ~/.bashrc — skipping."
+fi
+
+
+# ── Step 3: Restore backups (optional) ────────────────────────────────────────
 
 step "Checking for backups"
 
-if [ -d "$BACKUP_BASE" ]; then
-    # Find the most recent backup
-    latest_backup=$(ls -td "$BACKUP_BASE"/*/  2>/dev/null | head -1)
+backups=()
+for base in "${BACKUP_BASES[@]}"; do
+    [ -d "$base" ] || continue
+    while IFS= read -r d; do backups+=("$d"); done < <(find "$base" -mindepth 1 -maxdepth 1 -type d | sort)
+done
 
-    if [ -n "$latest_backup" ]; then
-        info "Found backup: $latest_backup"
-        read -rp "  Restore most recent backup? [y/N] " restore_confirm
-
-        if [[ "$restore_confirm" =~ ^[Yy]$ ]]; then
-            for f in "$latest_backup"/*; do
-                filename=$(basename "$f")
-                dest="$HOME/$filename"
-                cp -r "$f" "$dest"
-                success "Restored: $dest"
-            done
-        else
-            info "Backup not restored. Available at: $latest_backup"
-        fi
-    fi
-else
+if [ ${#backups[@]} -eq 0 ]; then
     info "No backups found."
+else
+    echo "  Backups (oldest first — #1 holds your files from BEFORE dotforge):"
+    for i in "${!backups[@]}"; do
+        printf '    %d) %s\n' "$((i + 1))" "${backups[$i]/#$HOME/\~}"
+        (cd "${backups[$i]}" && find . -mindepth 1 \( -type f -o -type l \) | sed 's|^\./|         ~/|')
+    done
+    echo ""
+    read -rp "  Restore which backup? [1-${#backups[@]}, Enter = none] " choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#backups[@]} ]; then
+        src="${backups[$((choice - 1))]}"
+        # Paths inside the backup are relative to $HOME. Old flat backups
+        # (no directories) are put back at the paths the old installer used.
+        while IFS= read -r rel; do
+            rel="${rel#./}"
+            case "$rel" in
+                plugin_config.vim|key_mapping.vim) dest="$HOME/.vim/$rel" ;;
+                c.snippets|python.snippets)        dest="$HOME/.vim/UltiSnips/$rel" ;;
+                *)                                 dest="$HOME/$rel" ;;
+            esac
+            mkdir -p "$(dirname "$dest")"
+            cp -a "$src/$rel" "$dest"
+            success "Restored: ${dest/#$HOME/\~}"
+        done < <(cd "$src" && find . -mindepth 1 \( -type f -o -type l \))
+    else
+        info "No backup restored. They remain in: ${BACKUP_BASES[0]/#$HOME/\~}"
+    fi
 fi
 
 
@@ -149,14 +157,11 @@ fi
 
 echo ""
 echo -e "${GREEN}${BOLD}============================================${RESET}"
-echo -e "${GREEN}${BOLD}  Dotforge uninstalled successfully        ${RESET}"
+echo -e "${GREEN}${BOLD}  dotforge uninstalled                      ${RESET}"
 echo -e "${GREEN}${BOLD}============================================${RESET}"
 echo ""
-echo "  Removed: Vim config, tmux config, shell aliases and functions"
-echo "  Kept:    ~/.bash_local (your private machine config)"
-echo "  Kept:    System packages (vim, tmux, fzf, etc.)"
+echo "  Kept:    ~/.bash_local, ~/.vim/undodir, system packages"
 echo ""
-echo "  Run 'source ~/.bashrc' to reload your shell."
-echo ""
+echo "  Open a new terminal (or 'exec bash') to drop the loaded aliases."
 echo "  To reinstall: ./scripts/install.sh"
 echo ""
