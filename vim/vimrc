@@ -23,6 +23,8 @@
 "   [1] Core VIM Behavior
 " ========================================================================
 set nocompatible                    " Must come first — it resets other options
+set encoding=utf-8                  " Before anything with non-ASCII characters is sourced
+scriptencoding utf-8
 filetype plugin indent on           " Filetype detection + plugins + indenting
 syntax enable                       " Enable syntax highlighting
 
@@ -43,7 +45,6 @@ source $HOME/.vim/plugin_config.vim
 set hidden                          " Allow buffer switching without saving
 set confirm                         " Ask instead of failing on :q with changes
 set autoread                        " Reload files changed outside Vim (git checkout, codegen)
-set encoding=utf-8
 set fileformats=unix,dos            " Prefer LF; still open CRLF vendor files
 
 " Keep swap/backup/undo files — but in ~/.vim, never next to the source.
@@ -245,10 +246,13 @@ function! s:IsKernelStyleTree() abort
   endif
   let l:dir = expand('%:p:h')
   " Linux / U-Boot / Barebox: Kbuild + MAINTAINERS at the top level
-  let l:kbuild = findfile('Kbuild', l:dir . ';')
-  if !empty(l:kbuild) && filereadable(fnamemodify(l:kbuild, ':h') . '/MAINTAINERS')
-    return 1
-  endif
+  " The NEAREST Kbuild is often a sub-directory one (arch/x86/Kbuild), so
+  " check every Kbuild on the way up, not just the first.
+  for l:kbuild in findfile('Kbuild', l:dir . ';', -1)
+    if filereadable(fnamemodify(l:kbuild, ':p:h') . '/MAINTAINERS')
+      return 1
+    endif
+  endfor
   " Out-of-tree kernel module: a Kbuild file, or a Makefile with obj-m
   let l:mk = findfile('Makefile', l:dir . ';')
   if !empty(l:mk) && fnamemodify(l:mk, ':h') ==# l:dir

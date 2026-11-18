@@ -36,8 +36,10 @@ alias o='xdg-open'
 # ====================== SYSTEM & PACKAGE MANAGEMENT ======================
 if command -v apt &>/dev/null; then
     alias update='sudo apt update && sudo apt upgrade -y && sudo apt autoremove -y'
-    alias install='sudo apt install'
-    alias remove='sudo apt remove'
+    # NOT named 'install'/'remove': 'install' is a coreutils command that
+    # Makefiles and scripts you run by hand call (install -m755 ...).
+    alias apti='sudo apt install'
+    alias aptr='sudo apt remove'
 fi
 # Kernel ring buffer. dmesg_restrict=1 on Ubuntu needs sudo.
 #   dmesg   — whole buffer        dmw — follow new messages (like tail -f)

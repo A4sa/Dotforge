@@ -64,7 +64,6 @@ call plug#begin('~/.vim/plugged')
 Plug 'morhetz/gruvbox'                       " Warm, low-fatigue colour scheme
 Plug 'vim-airline/vim-airline'               " Statusline - shows mode, filename, branch
 Plug 'vim-airline/vim-airline-themes'        " Themes for airline
-Plug 'ryanoasis/vim-devicons'                " File icons to airline and NERDTree
 
 " ── Navigation ──────────────────────────────────────────────────────────────
 Plug 'preservim/nerdtree'                    " Sidebar file explorer tree
@@ -102,6 +101,10 @@ endif
 "Plug 'stevearc/vim-arduino'                 " Arduino CLI integration — compile, upload, serial monitor from Vim.
 "Plug 'normen/vim-pio'                       " PlatformIO project management inside Vim.
 
+" vim-devicons must be the LAST plugin loaded, or NERDTree / airline icons
+" are missing.
+Plug 'ryanoasis/vim-devicons'                " File icons to airline and NERDTree
+
 call plug#end()
 
 " On a brand-new machine (first-time bootstrap), install all plugins without :PlugInstall.
@@ -123,7 +126,7 @@ silent! packadd! editorconfig
 "   soft   — lower contrast, easier on eyes in dark rooms / long sessions
 
 let g:gruvbox_contrast_dark  = 'hard'   " dark mode contrast: hard/medium/soft
-let g:gruvbox_contrast_light = 'light'     " light mode contrast
+let g:gruvbox_contrast_light = 'medium'    " light mode contrast: hard/medium/soft
 let g:gruvbox_italic         = 1          " enable italics (comments, keywords)
 let g:gruvbox_bold           = 1          " enable bold (types, constants)
 let g:gruvbox_invert_selection = 0        " keep selection readable (don't invert)

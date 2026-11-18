@@ -220,23 +220,32 @@ _dotforge_git_branch() {
     printf ' (%s)' "$branch"
 }
 
+# SECURITY: anything that comes from outside (git branch names, $VIRTUAL_ENV,
+# $ARCH) must NEVER be pasted into PS1 as text. Bash expands $(...) and `...`
+# inside PS1 at display time, and a git branch can legally be named
+# '$(some-command)' — cloning such a repo would run that command on every
+# prompt. So PS1 only holds REFERENCES (\${_DF_...}); the expansion result is
+# not expanded a second time.
 _dotforge_prompt() {
     local status=$?                 # MUST be the first line
     history -a                      # persist history after every command
 
-    local venv="" xc="" code="" sym
-    [ -n "$VIRTUAL_ENV" ] && venv="${_DF_MAGENTA}(${VIRTUAL_ENV##*/})${_DF_RESET} "
-    [ -n "$ARCH" ] && xc=" ${_DF_MAGENTA}[${ARCH}]${_DF_RESET}"
+    _DF_VENV="" _DF_BRANCH="" _DF_XC="" _DF_CODE=""
+    [ -n "${VIRTUAL_ENV:-}" ] && _DF_VENV="(${VIRTUAL_ENV##*/}) "
+    _DF_BRANCH="$(_dotforge_git_branch)"
+    [ -n "${ARCH:-}" ] && _DF_XC=" [${ARCH}]"
+    local sym
     if [ "$status" -eq 0 ]; then
-        sym="${_DF_GREEN}\$${_DF_RESET}"
+        sym="${_DF_GREEN}\\\$${_DF_RESET}"
     else
-        code=" ${_DF_RED}✗${status}${_DF_RESET}"
-        sym="${_DF_RED}\$${_DF_RESET}"
+        _DF_CODE=" ✗${status}"
+        sym="${_DF_RED}\\\$${_DF_RESET}"
     fi
 
-    PS1="${venv}${_DF_CYAN}${_DF_BOLD}\u${_DF_RESET}${_DF_CYAN}@\h${_DF_RESET}:"
-    PS1+="${_DF_BLUE}\w${_DF_RESET}${_DF_YELLOW}$(_dotforge_git_branch)${_DF_RESET}"
-    PS1+="${xc}${code} ${sym} "
+    PS1="${_DF_MAGENTA}\${_DF_VENV}${_DF_RESET}"
+    PS1+="${_DF_CYAN}${_DF_BOLD}\u${_DF_RESET}${_DF_CYAN}@\h${_DF_RESET}:"
+    PS1+="${_DF_BLUE}\w${_DF_RESET}${_DF_YELLOW}\${_DF_BRANCH}${_DF_RESET}"
+    PS1+="${_DF_MAGENTA}\${_DF_XC}${_DF_RESET}${_DF_RED}\${_DF_CODE}${_DF_RESET} ${sym} "
     return "$status"                # keep $? intact for later PROMPT_COMMAND hooks
 }
 

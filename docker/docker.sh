@@ -90,6 +90,15 @@ detect_distro() {
             ;;
     esac
 
+    case "$DOCKER_DISTRO" in
+        ubuntu|debian|fedora|arch) ;;
+        *)
+            error "Unsupported distro: '${DISTRO_ID}' (${DISTRO_NAME})
+Supported: Ubuntu, Debian, Fedora, Arch Linux (and their derivatives)
+Manual install: https://docs.docker.com/engine/install/"
+            ;;
+    esac
+
     info "Detected: ${BOLD}${DISTRO_NAME}${RESET}"
     info "ID: ${DISTRO_ID}  |  Version: ${DISTRO_VERSION}  |  Codename: ${DISTRO_CODENAME}  |  Docker repo: ${DOCKER_DISTRO}"
 }
@@ -154,6 +163,13 @@ install_ubuntu_debian() {
     curl -fsSL "https://download.docker.com/linux/${DOCKER_DISTRO}/gpg" \
         | sudo gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
     sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+    # A very new release may not have a Docker repository yet. Say so now,
+    # instead of failing later with a confusing apt 404.
+    if ! curl -fsI "https://download.docker.com/linux/${DOCKER_DISTRO}/dists/${DISTRO_CODENAME}/Release" >/dev/null; then
+        error "Docker has no repository for ${DOCKER_DISTRO} '${DISTRO_CODENAME}' yet.
+Check https://download.docker.com/linux/${DOCKER_DISTRO}/dists/ for supported releases."
+    fi
 
     # Add Docker's APT repository
     info "Adding Docker APT repository..."

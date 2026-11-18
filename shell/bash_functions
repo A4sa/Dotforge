@@ -165,6 +165,7 @@ xc-clear() {
 #   con                    → first USB serial port, 115200
 #   con 1                  → /dev/ttyUSB1
 #   con /dev/ttyACM0 1500000      (Rockchip default baud)
+#   con ttyUSB1                   (the /dev/ prefix is optional)
 #   con usb-FTDI_FT232R_...       (name from /dev/serial/by-id — stable)
 #   con -l                 → also log to ~/serial_logs/<date>.log
 # Exit picocom with Ctrl+A Ctrl+X.
@@ -181,6 +182,7 @@ con() {
             [0-9]|[0-9][0-9]) dev="/dev/ttyUSB$arg" ;;
             [0-9][0-9][0-9]*) baud="$arg" ;;
             /dev/*) dev="$arg" ;;
+            tty*) dev="/dev/$arg" ;;
             *) dev="/dev/serial/by-id/$arg" ;;
         esac
     done
@@ -264,7 +266,7 @@ adbpush() {
     fi
     local src="$1" dst="$2" target
     # Is the destination a directory on the device?
-    if [[ "$dst" == */ ]] || adb shell "[ -d '$dst' ]" 2>/dev/null; then
+    if [[ "$dst" == */ ]] || adb shell "[ -d \"$dst\" ]" 2>/dev/null; then
         target="${dst%/}/$(basename "$src")"
     else
         target="$dst"
@@ -411,12 +413,15 @@ rmmod_insmod() {
         echo "Note: $name was not loaded, skipping rmmod"
     fi
 
+    local rc=0
     if sudo insmod "$ko" "$@"; then
         _df_ok "Loaded:  $ko $*"
     else
-        _df_err "insmod failed — kernel log:"
+        rc=$?
+        _df_err "insmod failed ($rc) — kernel log:"
     fi
     sudo dmesg | tail -n 10
+    return "$rc"
 }
 
 # Run make and keep a log in build.log (exit status of make is preserved).
@@ -658,6 +663,8 @@ glog() {
 sysinfo() {
     local model cores sockets
     model=$(LC_ALL=C lscpu 2>/dev/null | awk -F: '/^Model name/ {sub(/^ +/, "", $2); print $2; exit}')
+    # ARM kernels often have no "Model name" in lscpu — fall back to /proc/cpuinfo.
+    [ -n "$model" ] || model=$(awk -F: '/^(model name|Hardware|Processor)/ {sub(/^ +/, "", $2); print $2; exit}' /proc/cpuinfo 2>/dev/null)
     cores=$(LC_ALL=C lscpu -p=core,socket 2>/dev/null | grep -v '^#' | sort -u | wc -l)
     echo "================================================"
     echo " System Information"
@@ -684,6 +691,10 @@ portinfo() {
     if [ -z "$1" ] || [ "$1" = "-h" ]; then
         echo "Usage: portinfo <port_number>"
         echo "  e.g. portinfo 8080"
+        return 1
+    fi
+    if ! [[ "$1" =~ ^[0-9]+$ ]] || [ "$1" -gt 65535 ]; then
+        _df_err "Not a valid port number: $1"
         return 1
     fi
     local out

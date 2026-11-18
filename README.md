@@ -299,6 +299,7 @@ Each pane also shows its number, command and directory on its top border. Colour
 | `Prefix+L` | Toggle logging this pane to `~/tmux_logs/` |
 | `Prefix+K` | Clear scrollback |
 | `Prefix+[` / mouse wheel | Copy mode (`v` select, `y` copy to clipboard) |
+| Mouse drag | Select + copy inside one pane (never use Shift+drag — it selects across all panes) |
 | `Prefix+d` | Detach session (keeps running) |
 | `Prefix+s` | Choose session |
 | `Prefix+r` | Reload `~/.tmux.conf` |
@@ -328,6 +329,7 @@ lsserial        # list serial ports with driver (ftdi_sio, cp210x, ch341…) and
 dmw             # follow the kernel log live
 ff / vf         # fzf with bat preview / open the pick in Vim
 glg             # git log --oneline --graph --decorate --all
+apti / aptr      # sudo apt install / remove  (not named 'install': that is a real command)
 dkrun           # docker run --rm -it as YOUR user with $PWD mounted
 ```
 
