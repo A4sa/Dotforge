@@ -14,7 +14,7 @@ Source of truth: [`vim/key_mapping.vim`](../vim/key_mapping.vim), [`vim/plugin_c
 | `Space w` | N | Save all buffers |
 | `Space q` | N | Quit Vim |
 | `Space x` | N | Save and close |
-| `Tab` / `Shift+Tab` | N | Next / previous buffer |
+| `Tab` / `Shift+Tab` | N | Next / previous buffer (a terminal sends `Tab` and `Ctrl+I` as the same key, so this replaces jump-forward; use `Space ]` if you need `Ctrl+I`) |
 | `Space ]` / `Space [` | N | Next / previous buffer |
 | `Space 1` … `Space 9` | N | Jump to buffer tab N (airline numbers) |
 | `Space d` | N | Close buffer, keep the window layout |
@@ -165,11 +165,42 @@ Source of truth: [`vim/key_mapping.vim`](../vim/key_mapping.vim), [`vim/plugin_c
 | `Prefix B` | Two ADB shells |
 | `Prefix L` | Toggle logging this pane to `~/tmux_logs/` |
 | `Prefix K` | Clear scrollback |
-| `Prefix [` / wheel | Copy mode: `v` select, `Ctrl+V` block, `y` copy |
-| `Prefix ]` | Paste tmux buffer |
-| `Prefix P` | Paste system clipboard |
+| `Prefix [` / wheel | Enter copy mode (see below) |
 | `Prefix d` | Detach |
 | `Prefix s` / `Prefix S` | Choose / create session |
 | `Prefix $` | Rename session (shown in the status bar) |
 | `Prefix r` | Reload config |
 | `Prefix e` | Edit `~/.tmux.conf` |
+
+### Copy and paste in tmux
+
+Copying goes through `~/.local/bin/dotforge-clip`, which uses `wl-copy` (Wayland), `xclip` or `xsel` (X11). On Wayland install `wl-clipboard`.
+
+**With the mouse** — drag inside ONE pane; the selection never crosses a pane border.
+
+| Action | Result |
+|---|---|
+| Drag | Select text in this pane; it is copied when you let go and stays highlighted |
+| Double-click / triple-click | Select and copy a word / a line |
+| `q` or `Esc` | Leave copy mode |
+
+> Do not hold **Shift** while dragging. Shift bypasses tmux and uses the terminal's own selection, which spans every pane and is not copied by tmux. Panes running a program that grabs the mouse (`htop`, Vim, Claude Code) get the drag instead of tmux.
+
+**With the keyboard** — `Prefix [`, then:
+
+| Key | Action |
+|---|---|
+| `h j k l` / arrows | Move the cursor |
+| `v` | Start selecting (like Vim visual) |
+| `Ctrl+V` | Toggle rectangular (block) selection |
+| `/` `?` `n` `N` | Search forward / backward / next / previous |
+| `y` or `Enter` | Copy the selection and leave copy mode |
+| `q` or `Esc` | Leave copy mode |
+
+**Pasting**
+
+| Key | Action |
+|---|---|
+| `Prefix ]` | Paste the last thing copied in tmux (works without a clipboard tool) |
+| `Prefix P` | Paste the desktop clipboard into the pane |
+| `Ctrl+Shift+V` | Paste the desktop clipboard (terminal shortcut) |
